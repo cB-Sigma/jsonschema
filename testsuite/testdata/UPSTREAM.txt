@@ -1,4 +1,6 @@
 JSON-Schema-Test-Suite/ is a copy of https://github.com/json-schema-org/JSON-Schema-Test-Suite
 commit 7de0e6a06031ede80028583dd45d0cd41105ae5b (committed 2026-10-09T17:37:59Z),
 copied 2026-10-11: LICENSE, remotes/, and tests/ of draft4, draft6, draft7,
-draft2019-09 and draft2020-12 (with their optional/ directories), unchanged.
+draft2019-09 and draft2020-12 (with their optional/ directories), and
+output-tests/ (README.md, and draft2019-09 and draft2020-12), unchanged.
+That commit was still the newest on 2026-10-11 (checked for v0.3.0).

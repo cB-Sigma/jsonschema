@@ -17,8 +17,8 @@ Dependencies
   Unicode normalisation, case folding and the Bidi rule for the
   internationalised host-name check.
 - golang.org/x/net (BSD-3-Clause, Copyright The Go Authors): its idna
-  package applies the CONTEXTJ rules (joining types) in the
-  internationalised host-name check.
+  package applies the CONTEXTJ rules (joining types) and its UTS 46
+  mapping table in the internationalised host-name check.
 - The Go standard library (BSD-3-Clause, Copyright The Go Authors).
 
 Test data
@@ -31,7 +31,14 @@ not part of this module's build) vendors files of the JSON Schema Test
 Suite (https://github.com/json-schema-org/JSON-Schema-Test-Suite, commit
 7de0e6a06031ede80028583dd45d0cd41105ae5b of 2026-10-09) under
 testsuite/testdata/JSON-Schema-Test-Suite/: the tests of draft4, draft6,
-draft7, draft2019-09 and draft2020-12, the remotes, and its LICENSE.
+draft7, draft2019-09 and draft2020-12, the output tests of draft2019-09
+and draft2020-12 (output-tests/), the remotes, and its LICENSE.
 They are licensed under the MIT License:
 
   Copyright (c) 2012 Julian Berman
+
+The benchmark-only nested module bench/ (github.com/cB-Sigma/jsonschema/bench,
+not part of this module's build) imports, to compare with them,
+github.com/santhosh-tekuri/jsonschema/v6 (Apache License 2.0) and
+github.com/kaptinlin/jsonschema (MIT License, Copyright kaptinlin) with
+its dependencies. No code of theirs is copied.

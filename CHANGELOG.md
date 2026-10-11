@@ -1,5 +1,53 @@
 # Changelog
 
+## v0.3.0 (2026-10-11)
+
+Every required and optional test of the JSON Schema Test Suite passes in
+every draft, and the suite's output tests pass. Existing functions keep
+their signatures and their behaviour with the default options, except
+for the fixes to `CheckSchemas` below.
+
+### Added
+
+- `Set.Output`, `OutputFormat` and `OutputUnit`: the specification's
+  output formats flag, basic, detailed and verbose, with annotations, our
+  messages, and `absoluteKeywordLocation` under the specification's name.
+- `Options.DefaultDraft`: the draft of documents without `$schema`
+  (draft-07 if unset, as before).
+- `Options.Draft4Integer`: in draft-04 documents a number written with a
+  fraction or exponent (`1.0`) is not an integer, as draft-04 defines it.
+  The suite's last listed failure passes with it.
+- `Set.ValidateGo`: validate a Go value as its JSON encoding.
+- `Keywords2020`: the 2019-09 and 2020-12 keywords `CheckSchemas` accepts
+  in documents of those drafts.
+- Tests of `$dynamicRef`, `$recursiveRef` and `$vocabulary` across a
+  family (custom meta-schemas in the set), the suite's output tests
+  (`TestOutputSuite`), `CheckSchemas` over every schema of the suite
+  (`TestCheckSchemasSuite`), every suite test through `Output`, and
+  `FuzzOutput`.
+- The nested module `bench/`: benchmarks against
+  santhosh-tekuri/jsonschema/v6 v6.0.3 and kaptinlin/jsonschema v0.9.10.
+
+### Changed
+
+- idn-hostname maps labels by the UTS 46 mapping table of
+  golang.org/x/net/idna instead of an approximation (NFKC, case folding
+  and dropping default-ignorables).
+
+### Fixed
+
+- `CheckSchemas` refused 2019-09 and 2020-12 keywords (`$defs`,
+  `$dynamicRef`, `prefixItems` and the others) in documents of those
+  drafts, ignored siblings of `$ref` there, and did not walk `$defs`,
+  `dependentSchemas`, `prefixItems`, `unevaluatedProperties`,
+  `unevaluatedItems` or `contentSchema`.
+- `CheckSchemas` resolved references only against top-level `$id`s: it
+  now uses the base URI in force at the reference (embedded resources
+  with their own `$id`, draft-04 `id`), and follows anchors (`$anchor`,
+  `$dynamicAnchor`, draft-06/07 `"$id": "#name"`).
+- A draft-04 document's `id` now identifies it in the set, as `$id` does
+  in later drafts.
+
 ## v0.2.0 (2026-10-11)
 
 Every "no" of the v0.1 feature table that the JSON Schema Test Suite

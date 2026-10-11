@@ -35,9 +35,6 @@ type Keyword struct {
 	Check func(c *CheckContext, schema map[string]any, value any)
 }
 
-// resolve finds the target of a $ref from document d: by $id, then by a
-// name equal to the whole URL, then by file name, then a JSON pointer in
-// that document.
 func (s *Set) resolve(d *doc, ref string) (*doc, any, error) {
 	u, err := url.Parse(ref)
 	if err != nil {
@@ -115,7 +112,7 @@ func (s *Set) CheckSchemas(name string, pointers ...string) ([]string, error) {
 	if d == nil {
 		return nil, fmt.Errorf("no schema %s in the set", name)
 	}
-	w := &walker{s: s, seen: map[string]*wnode{}}
+	w := &walker{s: s, seen: map[string]*wnode{}, ix: s.refs()}
 	for _, p := range pointers {
 		node, err := lookupPointer(d.root, p)
 		if err != nil {
@@ -151,24 +148,74 @@ type walker struct {
 	seen  map[string]*wnode
 	order []*wnode
 	errs  ValidationError
+	ix    *refIndex
 }
 
 func (w *walker) fail(loc, kw, format string, a ...any) {
 	w.errs = append(w.errs, Error{Path: loc, Keyword: kw, Message: fmt.Sprintf(format, a...)})
 }
 
-func (w *walker) allowed(k string) bool {
+func (w *walker) allowed(d *doc, k string) bool {
 	dl := w.s.dialect
-	if dl == nil {
-		return Keywords[k]
+	if dl != nil {
+		if _, ok := dl.Keywords[k]; ok {
+			return true
+		}
+		if dl.Allowed != nil {
+			return dl.Allowed(k)
+		}
 	}
-	if _, ok := dl.Keywords[k]; ok {
-		return true
+	return Keywords[k] || w.s.modern(d) && Keywords2020[k]
+}
+
+// Keywords2020 are the keywords of drafts 2019-09 and 2020-12 that are
+// not in Keywords. Without a dialect's Allowed, CheckSchemas accepts them
+// in documents of those drafts.
+var Keywords2020 = map[string]bool{
+	"$defs": true, "$anchor": true, "$dynamicRef": true, "$dynamicAnchor": true, "$recursiveRef": true,
+	"$recursiveAnchor": true, "$vocabulary": true, "dependentRequired": true, "dependentSchemas": true,
+	"prefixItems": true, "unevaluatedProperties": true, "unevaluatedItems": true, "minContains": true,
+	"maxContains": true, "contentSchema": true, "deprecated": true,
+}
+
+// modern reports whether a document is read by draft 2019-09 or later:
+// its $schema names one (or a meta-schema in the set that does), or it
+// names none and the set's default draft is one.
+func (s *Set) modern(d *doc) bool {
+	m, ok := d.root.(map[string]any)
+	if !ok {
+		return false
 	}
-	if dl.Allowed != nil {
-		return dl.Allowed(k)
+	sch, has := m["$schema"].(string)
+	if !has {
+		sch = s.opts.DefaultDraft
 	}
-	return Keywords[k]
+	for range 8 { // a custom meta-schema names its own meta-schema
+		if strings.Contains(sch, "/draft/2019-09/") || strings.Contains(sch, "/draft/2020-12/") {
+			return true
+		}
+		if strings.Contains(sch, "json-schema.org/draft-0") || sch == "" {
+			return false
+		}
+		u, err := url.Parse(sch)
+		if err != nil {
+			return false
+		}
+		u.Fragment = ""
+		md := s.byID[u.String()]
+		if md == nil {
+			md = s.byName[u.String()]
+		}
+		if md == nil {
+			return false
+		}
+		mm, ok := md.root.(map[string]any)
+		if !ok {
+			return false
+		}
+		sch, _ = mm["$schema"].(string)
+	}
+	return false
 }
 
 // visit walks one schema and returns its graph node.
@@ -191,26 +238,9 @@ func (w *walker) visit(d *doc, loc string, node any) *wnode {
 	if w.s.dialect != nil {
 		kwds = w.s.dialect.Keywords
 	}
-	if r, has := m["$ref"]; has { // siblings of $ref are ignored
-		before := len(w.errs)
-		if kw, ok := kwds["$ref"]; ok && kw.Check != nil {
-			kw.Check(&CheckContext{w: w, loc: loc + "/$ref"}, m, r)
-		}
-		if len(w.errs) > before {
-			return n
-		}
-		ref, ok := r.(string)
-		if !ok {
-			w.fail(loc+"/$ref", "$ref", "$ref must be a string")
-			return n
-		}
-		td, target, err := w.s.resolve(d, ref)
-		if err != nil {
-			w.fail(loc+"/$ref", "$ref", "%v", err)
-			return n
-		}
-		u, _ := url.Parse(ref)
-		n.next = append(n.next, w.visit(td, u.Fragment, target))
+	modern := w.s.modern(d)
+	if r, has := m["$ref"]; has && !modern { // before 2019-09, siblings of $ref are ignored
+		w.ref(d, n, loc, "$ref", r, kwds, m)
 		return n
 	}
 	keys := make([]string, 0, len(m))
@@ -221,14 +251,39 @@ func (w *walker) visit(d *doc, loc string, node any) *wnode {
 	for _, k := range keys {
 		sub := m[k]
 		kl := loc + "/" + escape(k)
-		if !w.allowed(k) {
+		if !w.allowed(d, k) {
 			w.fail(kl, k, "keyword %q is not supported", k)
+			continue
+		}
+		switch k {
+		case "$ref", "$dynamicRef", "$recursiveRef": // 2019-09 and later; checked there
+			if modern {
+				w.ref(d, n, loc, k, sub, kwds, m)
+			}
 			continue
 		}
 		if kw, ok := kwds[k]; ok && kw.Check != nil {
 			kw.Check(&CheckContext{w: w, loc: kl}, m, sub)
 		}
 		switch k {
+		case "unevaluatedProperties", "unevaluatedItems", "contentSchema":
+			w.visit(d, kl, sub)
+		case "prefixItems":
+			if l, ok := sub.([]any); ok {
+				for i, e := range l {
+					w.visit(d, kl+"/"+strconv.Itoa(i), e)
+				}
+			}
+		case "dependentSchemas", "$defs":
+			if sm, ok := sub.(map[string]any); ok {
+				for _, sk := range sortedKeys(sm) {
+					if k == "dependentSchemas" {
+						n.next = append(n.next, w.visit(d, kl+"/"+escape(sk), sm[sk]))
+					} else {
+						w.visit(d, kl+"/"+escape(sk), sm[sk])
+					}
+				}
+			}
 		case "properties", "patternProperties", "definitions":
 			if sm, ok := sub.(map[string]any); ok {
 				for _, sk := range sortedKeys(sm) {
@@ -268,6 +323,29 @@ func (w *walker) visit(d *doc, loc string, node any) *wnode {
 		}
 	}
 	return n
+}
+
+// ref checks a reference keyword (k is $ref, $dynamicRef or
+// $recursiveRef) and visits its static target as reached in place.
+func (w *walker) ref(d *doc, n *wnode, loc, k string, r any, kwds map[string]Keyword, m map[string]any) {
+	before := len(w.errs)
+	if kw, ok := kwds[k]; ok && kw.Check != nil {
+		kw.Check(&CheckContext{w: w, loc: loc + "/" + k}, m, r)
+	}
+	if len(w.errs) > before {
+		return
+	}
+	ref, ok := r.(string)
+	if !ok {
+		w.fail(loc+"/"+k, k, "%s must be a string", k)
+		return
+	}
+	td, target, ptr, err := w.s.resolveAt(w.ix, d, loc, ref)
+	if err != nil {
+		w.fail(loc+"/"+k, k, "%v", err)
+		return
+	}
+	n.next = append(n.next, w.visit(td, ptr, target))
 }
 
 // cycles reports each schema that leads back to a schema being visited

@@ -21,7 +21,7 @@ SigmaM2M, a oneM2M platform, where it validates OCPP 1.6 to 2.1 and OSCP
 
 | Feature | Status |
 |---|---|
-| Drafts 4, 6, 7, 2019-09 and 2020-12, chosen by each document's `$schema` (draft-07 when it names none) | yes (the library's) |
+| Drafts 4, 6, 7, 2019-09 and 2020-12, chosen by each document's `$schema`; `Options.DefaultDraft` for documents that name none (draft-07 if unset) | yes (the library's) |
 | Schema families: references by `$id`, by a document added under the whole URL, then by file name; nothing fetched from the network | yes |
 | Failures as pointer, keyword and our message, in a stable order (`ValidationError`, `Translate`, `Style`) | yes |
 | Numbers kept exact (`Decode` with `json.Number`; `integer` accepts any number whose fraction is zero) | yes |
@@ -30,19 +30,21 @@ SigmaM2M, a oneM2M platform, where it validates OCPP 1.6 to 2.1 and OSCP
 | idn-hostname by IDNA2008 (RFC 5891 to 5893): Punycode round trip, derived property, CONTEXTJ and CONTEXTO rules, Bidi rule, after a lookup mapping | yes, see the notes below |
 | `pattern`, `patternProperties` and format `regex` as ECMA-262 with the u flag: lookahead, lookbehind, back references, named groups, `\p{...}`, pattern modifiers (`CompileRegexp`); `Options.GoRegexp` keeps Go's RE2 syntax | yes |
 | `contentEncoding`, `contentMediaType` and `contentSchema` as assertions (`Options.AssertContent`); annotations by default | yes |
-| Dialects: refuse keywords outside an allowed set before use (`Dialect`, `CheckSchemas`, `OCA()`) | yes |
-| Output formats of the specification (flag, basic, detailed) | no: use the library directly |
-| A number with a zero fraction refused as `integer` in draft-04 | no, on purpose: one rule for every draft |
+| Dialects: refuse keywords outside an allowed set before use (`Dialect`, `CheckSchemas`, `OCA()`); 2019-09 and 2020-12 keywords, embedded `$id` resources, `$anchor`, `$dynamicRef` and `$recursiveRef` followed | yes |
+| `$dynamicRef`, `$recursiveRef` and `$vocabulary` across a family of documents (custom meta-schemas in the set) | yes (the library's), tested here |
+| Output formats of the specification: flag, basic, detailed, verbose, with annotations (`Set.Output`, `OutputUnit`) | yes, see the notes below |
+| A number written with a fraction or exponent (`1.0`) refused as `integer` in draft-04 | yes, with `Options.Draft4Integer`; accepted by default |
+| Validate a Go value (struct tags and `MarshalJSON` apply) | yes (`Set.ValidateGo`) |
+| Build schemas in code | as decoded values (`AddValue`); no builder API |
 
 Notes on the checkers:
 
-- **idn-hostname** maps each label as a lookup would before checking it
-  (default-ignorable characters other than the two joiners dropped, then
-  NFKC and case folding). This approximates the UTS 46 mapping table
-  rather than reading it. The IDNA2008 derived property is computed from
-  Go's Unicode tables and golang.org/x/text, not read from the IANA
-  registry, so it follows the Unicode version of the Go release used. The
-  joining types for the CONTEXTJ rules come from golang.org/x/net/idna.
+- **idn-hostname** maps each label by the UTS 46 mapping table
+  (nontransitional) as golang.org/x/net/idna carries it, then checks it
+  by IDNA2008. The IDNA2008 derived property is computed from Go's
+  Unicode tables and golang.org/x/text, not read from the IANA registry,
+  so it follows the Unicode version of the Go release used. The joining
+  types for the CONTEXTJ rules come from golang.org/x/net/idna.
 - **Patterns** that need no lookaround, back reference, multiline anchor
   or counted repeat above 1000 are translated to Go's RE2 syntax and match
   in linear time. Others run on a backtracking matcher that follows the
@@ -58,31 +60,77 @@ Notes on the checkers:
   most 64 octets, a host name or an IPv4 or IPv6 address literal. Comments,
   display names and other address literals are refused.
 
+Notes on the output formats:
+
+- Failures in basic and detailed are the library's, found in context,
+  with our messages in `error`. The verbose tree evaluates each subschema
+  on the part of the instance it applies to and records valid branches
+  too; a subschema reached through `$dynamicRef` or `$recursiveRef` is
+  shown at its static target. When that alone cannot explain a failure
+  (the dynamic scope changed the target), verbose shows the library's
+  failure tree instead. The result's `valid` is always that of `Validate`.
+- Annotations come from title, description, default, examples,
+  deprecated, readOnly, writeOnly, format, the content keywords, and the
+  applicators (properties, patternProperties, additionalProperties,
+  unevaluatedProperties, prefixItems, items, contains, unevaluatedItems).
+  Unknown keywords are not collected as annotations.
+- `absoluteKeywordLocation` is the `$id` of the enclosing schema resource
+  and a pointer in it; a document without `$id` is `mem:///` and its name
+  in the set.
+- The library's own `OutputUnit` names the property
+  `AbsoluteKeywordLocation` (capital A) in JSON; this module's uses the
+  specification's `absoluteKeywordLocation`.
+- Verbose evaluates each subschema again, so it costs several times a
+  validation (see Benchmarks).
+
 ## Choosing a Go JSON Schema validator
 
 Compared from each project's source or README at the versions named, in
 October 2026. Check the projects themselves before relying on a row.
 
-| | this module v0.2.0 | santhosh-tekuri/jsonschema v6.0.3 | kaptinlin/jsonschema v0.9.9 | xeipuuv/gojsonschema v1.2.0 |
+| | this module v0.3.0 | santhosh-tekuri/jsonschema v6.0.3 | kaptinlin/jsonschema v0.9.10 | xeipuuv/gojsonschema v1.2.0 |
 |---|---|---|---|---|
 | What it is | a layer over santhosh-tekuri v6 | a validator | a validator | a validator |
 | Drafts | 4, 6, 7, 2019-09, 2020-12 | 4, 6, 7, 2019-09, 2020-12 | 4, 6, 7, 2019-09, 2020-12 | 4, 6, 7 |
-| Default draft without `$schema` | 7 | 2020-12 | 2020-12 | not compared |
-| JSON Schema Test Suite | run here, required and optional (below) | run in its CI | not stated in its README | not compared |
+| Default draft without `$schema` | 7, settable | 2020-12, settable | 2020-12 | not compared |
+| JSON Schema Test Suite | every required and optional test passes, and the output tests (below) | run in its CI | vendored as a git submodule | not compared |
 | Formats idn-hostname, idn-email | yes | no checker | not compared | not compared |
-| Patterns | ECMA-262 (u flag), RE2 where possible | Go RE2, or an engine you plug in | not compared | Go RE2 |
+| Patterns | ECMA-262 (u flag), RE2 where possible | Go RE2, or an engine you plug in | Go RE2 | Go RE2 |
 | Families with mismatched file names and `$id` | yes | through a custom loader | not compared | not compared |
-| Failure list in a stable order, own wording | yes | output formats of the specification | its own | its own |
-| Keyword dialect refusal before use | yes | vocabularies (2019-09 and later) | not compared | no |
-| Last release | v0.x | 2026-08 | 2026-08 | 2019-10 |
+| Failures | a list in a stable order with our wording; the specification's flag, basic, detailed and verbose | flag, basic and detailed (no verbose, no annotations) | flag and list (the newer output proposal) | its own |
+| Keyword dialect refusal before use | yes | vocabularies (2019-09 and later) | dialects | no |
+| Go structs | as their JSON (`ValidateGo`) | no | validated directly, and unmarshalled with defaults | no |
+| Schemas built in code | as decoded values | no | a constructor API | no |
+| Last release | v0.x | 2026-08 | 2026-10 | 2019-10 |
 
 Pick this module when you validate protocol messages against a family of
 published schemas and need failures you can put in a reply, in the same
 order every time, or when patterns and formats must follow the
 specification exactly. Pick santhosh-tekuri/jsonschema/v6 directly when
-you want the specification's output formats or your own extension
-vocabularies: it is the engine here. Pick kaptinlin/jsonschema to validate
-Go structs or to build schemas in code.
+you want your own extension vocabularies or the fastest failure path (it
+is the engine here; see Benchmarks). Pick kaptinlin/jsonschema to build
+schemas in code with a typed API or to fill struct defaults while
+unmarshalling.
+
+### Benchmarks
+
+The nested module `bench/` (Go 1.27, which kaptinlin v0.9.10 requires)
+validates one OCPP-shaped 2020-12 schema (nested objects and arrays,
+`$ref`, enums, bounds, a pattern, a format) with each validator, after
+`TestAgree` checks that they agree. On an Apple M4 Pro, Go 1.27.0,
+`go test -bench . -benchmem` gave:
+
+| | this module | santhosh-tekuri v6.0.3 | kaptinlin v0.9.10 |
+|---|---|---|---|
+| Compile the schema | 137 µs | 143 µs | 41 µs |
+| Validate a decoded valid instance | 4.7 µs | 4.9 µs | 23 µs |
+| Validate a decoded instance with four failures | 6.5 µs (and the failure list) | 3.6 µs | 18 µs |
+| Decode and validate, valid | 10.8 µs | 10.5 µs | 28 µs |
+| Decode and validate, four failures | 10.6 µs | 7.5 µs | 22 µs |
+
+This module adds nothing to a valid instance; on a failure it spends
+about 3 µs building the ordered list. `Output` on the failing instance
+took 15 µs (basic, detailed) and 72 µs (verbose).
 
 ## Install
 
@@ -125,8 +173,9 @@ API reference: https://pkg.go.dev/github.com/cB-Sigma/jsonschema
 
 | Package | What it does |
 |---|---|
-| `jsonschema` (module root) | `NewSet`, `NewSetWith` and `Options`, `NewDialectSet`, `Set.Add`, `AddValue`, `Compile`, `ValidateJSON`, `Validate`, `Decode`; `ValidationError`, `Translate` and `Style` (the wording of the library's failures, for callers that compile with the library themselves); `CompileRegexp` and `Regexp` (ECMA-262 patterns, usable as the library's regexp engine); `Dialect`, `CheckSchemas`, `OCA()` |
+| `jsonschema` (module root) | `NewSet`, `NewSetWith` and `Options`, `NewDialectSet`, `Set.Add`, `AddValue`, `Compile`, `ValidateJSON`, `Validate`, `ValidateGo`, `Decode`; `Output`, `OutputFormat` and `OutputUnit` (the specification's output formats); `ValidationError`, `Translate` and `Style` (the wording of the library's failures, for callers that compile with the library themselves); `CompileRegexp` and `Regexp` (ECMA-262 patterns, usable as the library's regexp engine); `Dialect`, `CheckSchemas`, `OCA()` |
 | `testsuite` (nested module, tests only) | runs the JSON Schema Test Suite against this module |
+| `bench` (nested module, benchmarks only) | compares this module with santhosh-tekuri/jsonschema/v6 and kaptinlin/jsonschema |
 
 ## Testing
 
@@ -153,13 +202,24 @@ draft other than the draft-07 default.
 
 Each file runs with the options its tests are written for: the files
 under `optional/format/` with `AssertFormat`, draft7's
-`optional/content` with `AssertContent`, and every other file, the
-required `format.json` tests included, with the defaults (ECMA-262
-patterns).
+`optional/content` with `AssertContent`, draft4's
+`optional/zeroTerminatedFloats` with `Draft4Integer`, and every other
+file, the required `format.json` tests included, with the defaults
+(ECMA-262 patterns). Every test is also run through `Set.Output` in the
+basic, detailed and verbose formats, which must agree with `Validate`
+and list at least one error for a failure.
+
+`TestOutputSuite` runs the suite's output tests (`output-tests/`, 4 for
+2019-09 and 4 for 2020-12, all passing): the basic output must match each
+test's schema, and all four formats must match the specification's
+output schema. `TestCheckSchemasSuite` runs `CheckSchemas` over all 1,408
+schemas of the required tests of every draft; it must follow their
+references (embedded `$id` resources, anchors, `$dynamicRef`,
+`$recursiveRef`, draft-04 `id`) without refusing any.
 
 | Draft | Required | Optional | Optional, format |
 |---|---|---|---|
-| draft4 | 618/618 | 99/100 | 291/291 |
+| draft4 | 618/618 | 100/100 | 291/291 |
 | draft6 | 841/841 | 106/106 | 414/414 |
 | draft7 | 929/929 | 118/118 | 804/804 |
 | draft2019-09 | 1261/1261 | 158/158 | 885/885 |
@@ -172,18 +232,18 @@ and URI checkers, Go RE2 patterns, content not asserted).
 Run it with `cd testsuite && go test -v ./...`. The test fails when a test
 outside `testsuite/testdata/known-failures.txt` fails, when a listed test
 passes, or when a listed test is no longer in the suite, for required and
-optional tests alike. The one listed failure:
-
-| Cause | Tests | What it is |
-|---|---|---|
-| integer with zero fraction | 1 | draft4 optional: `1.0` counts as an integer in every draft, as JSON has one number type; the suite marks this behaviour as language-dependent |
+optional tests alike. Since v0.3.0 the list is empty; v0.2.0 listed one
+test (draft4 optional: `1.0` as an integer), now passed with
+`Draft4Integer`.
 
 The run found and fixed, in v0.1.0, two bugs in this module: a document
 added under a full URL without an `$id` (as the suite's remotes are) was
 not found by that URL, and the time and date-time checks accepted hours,
 minutes and offsets out of range and refused leap seconds. In v0.2.0 it
 found that the translation of a failed `contentSchema` reported the
-decoded content's failures at the instance's pointers.
+decoded content's failures at the instance's pointers. In v0.3.0 it found
+that `CheckSchemas` refused every 2019-09 and 2020-12 schema using `$defs`
+and could not follow anchors, embedded `$id` resources or draft-04 `id`.
 
 ### Interop tested against
 

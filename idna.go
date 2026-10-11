@@ -143,14 +143,17 @@ func validIDNHostname(s string) bool {
 
 // idnMap maps a label as a lookup would (see above).
 func idnMap(l string) string {
-	l = strings.Map(func(r rune) rune {
-		if r != '\U0000200c' && r != '\U0000200d' && defaultIgnorable(r) {
-			return -1
-		}
-		return r
-	}, l)
-	return norm.NFKC.String(cases.Fold().String(norm.NFKC.String(l)))
+	if isASCII(l) {
+		return strings.ToLower(l)
+	}
+	// The UTS 46 mapping table (nontransitional) as golang.org/x/net/idna
+	// carries it; its validation errors are ignored here, as the label is
+	// checked by IDNA2008 below.
+	m, _ := uts46Map.ToUnicode(l)
+	return m
 }
+
+var uts46Map = idna.New(idna.MapForLookup(), idna.Transitional(false))
 
 // validULabel checks a U-label by RFC 5891 section 5.4.
 func validULabel(u string) bool {

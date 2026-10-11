@@ -59,9 +59,10 @@ type Set struct {
 }
 
 type doc struct {
-	name string
-	base *url.URL // $id, or the file name
-	root any
+	name  string
+	base  *url.URL // $id, or the file name
+	idKey string   // "$id", or "id" in draft-04
+	root  any
 }
 
 // Options choose how a Set made by NewSetWith validates. The zero value is
@@ -86,6 +87,28 @@ type Options struct {
 	// with Go's regexp syntax (RE2), as v0.1 did, instead of ECMA-262
 	// (CompileRegexp).
 	GoRegexp bool
+
+	// DefaultDraft is the meta-schema URL of the draft that documents
+	// without $schema are read by, one of the URLs of drafts 4, 6, 7,
+	// 2019-09 and 2020-12 ("https://json-schema.org/draft/2020-12/schema").
+	// Empty means draft-07, as in v0.1 and v0.2. Another value makes
+	// Compile fail.
+	DefaultDraft string
+
+	// Draft4Integer refuses, in draft-04 documents, a number written with
+	// a fraction or an exponent (1.0, 1e2) where "type" allows integer but
+	// not number, as draft-04 defines integer. Without it a number whose
+	// value is whole is an integer in every draft.
+	Draft4Integer bool
+}
+
+// drafts are the meta-schema URLs DefaultDraft takes, without "#".
+var drafts = map[string]*v6.Draft{
+	"http://json-schema.org/draft-04/schema":       v6.Draft4,
+	"http://json-schema.org/draft-06/schema":       v6.Draft6,
+	"http://json-schema.org/draft-07/schema":       v6.Draft7,
+	"https://json-schema.org/draft/2019-09/schema": v6.Draft2019,
+	"https://json-schema.org/draft/2020-12/schema": v6.Draft2020,
 }
 
 // NewSet returns an empty set. format is asserted in drafts 4, 6 and 7
@@ -132,9 +155,12 @@ func (s *Set) add(name string, root any) error {
 		return fmt.Errorf("schema %s is added twice", name)
 	}
 	base, _ := url.Parse(name)
-	d := &doc{name: name, base: base, root: root}
+	d := &doc{name: name, base: base, root: root, idKey: "$id"}
+	if s.readsAsDraft4(root) {
+		d.idKey = "id" // draft-04 names it "id"
+	}
 	if m, ok := root.(map[string]any); ok {
-		if id, ok := m["$id"].(string); ok && id != "" {
+		if id, ok := m[d.idKey].(string); ok && id != "" {
 			if u, err := url.Parse(id); err == nil {
 				if u.IsAbs() {
 					d.base = u
@@ -170,6 +196,18 @@ func (s *Set) ValidateJSON(name string, data []byte) error {
 	return s.Validate(name, v)
 }
 
+// ValidateGo validates any Go value (a struct, a map, a slice) as the JSON
+// that encoding/json makes of it, so struct tags and MarshalJSON methods
+// apply. A value that cannot be encoded is a ValidationError with keyword
+// "json".
+func (s *Set) ValidateGo(name string, v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return ValidationError{{Keyword: "json", Message: "cannot be encoded as JSON: " + err.Error()}}
+	}
+	return s.ValidateJSON(name, b)
+}
+
 // Validate checks an instance decoded with Decode (or any value built of
 // map[string]any, []any, string, bool, nil, json.Number and float64). A
 // failed check is a ValidationError; a schema that cannot be compiled is
@@ -195,7 +233,11 @@ func (s *Set) Compile(name string) (*v6.Schema, error) {
 		return nil, fmt.Errorf("no schema %s in the set", name)
 	}
 	if s.compiler == nil {
-		s.compiler = s.newCompiler()
+		c, err := s.newCompiler()
+		if err != nil {
+			return nil, err
+		}
+		s.compiler = c
 	}
 	sch, err := s.compiler.Compile(docURL(name))
 	if err != nil {
@@ -208,9 +250,19 @@ func (s *Set) Compile(name string) (*v6.Schema, error) {
 // docURL is the URL a document is given to the library under.
 func docURL(name string) string { return "mem:///" + url.PathEscape(name) }
 
-func (s *Set) newCompiler() *v6.Compiler {
+func (s *Set) newCompiler() (*v6.Compiler, error) {
 	c := v6.NewCompiler()
 	c.DefaultDraft(v6.Draft7)
+	if s.opts.DefaultDraft != "" {
+		d, ok := drafts[strings.TrimSuffix(s.opts.DefaultDraft, "#")]
+		if !ok {
+			return nil, fmt.Errorf("default draft %q is not a meta-schema URL of drafts 4 to 2020-12", s.opts.DefaultDraft)
+		}
+		c.DefaultDraft(d)
+	}
+	if s.opts.Draft4Integer {
+		c.RegisterVocabulary(draft4IntVocab)
+	}
 	if s.opts.AssertFormat {
 		c.AssertFormat()
 	}
@@ -234,7 +286,23 @@ func (s *Set) newCompiler() *v6.Compiler {
 		}})
 	}
 	c.UseLoader(loader{s})
-	return c
+	return c, nil
+}
+
+// readsAsDraft4 reports whether a document is read by draft-04: it names
+// draft-04, or names no draft and draft-04 is the set's default.
+func (s *Set) readsAsDraft4(root any) bool {
+	if isDraft4(root) {
+		return true
+	}
+	m, ok := root.(map[string]any)
+	if !ok {
+		return false
+	}
+	if _, has := m["$schema"]; has {
+		return false
+	}
+	return strings.TrimSuffix(s.opts.DefaultDraft, "#") == draft4Meta
 }
 
 // loader hands the library the set's documents: by name for the URLs Compile
@@ -265,7 +333,11 @@ func (l loader) Load(u string) (any, error) {
 		return nil, fmt.Errorf("%s: no such schema in the set", u)
 	}
 	s.byURL[u] = d.root
-	return withFormatAssertion(d.root), nil
+	root := withFormatAssertion(d.root)
+	if s.opts.Draft4Integer && s.readsAsDraft4(root) {
+		root = markDraft4Integers(root)
+	}
+	return root, nil
 }
 
 const formatAssertionVocab = "https://json-schema.org/draft/2020-12/vocab/format-assertion"

@@ -42,6 +42,18 @@ dependency. SigmaM2M's OpenAPI code had a smaller ECMA-262 to RE2
 translator (one top-level lookahead); `CompileRegexp` replaces that
 approach and shares no code with it.
 
+For v0.3.0 (2026-10-11) the output formats were written from the JSON
+Schema 2020-12 core specification (section 12) and checked against the
+suite's output tests and output schema; the walk over the library's
+compiled schema uses its exported fields only. Reference resolution in
+`CheckSchemas` follows RFC 3986 and the 2020-12 core specification's
+rules for base URIs, `$anchor` and `$dynamicAnchor`. The draft-04 integer
+rule is from the draft-04 core specification (draft-zyp-json-schema-04).
+No code was ported from another validator; santhosh-tekuri's output
+code was read to match its keyword locations for failures, and
+kaptinlin/jsonschema was read (v0.9.10) only for the comparison in the
+README and is used, unmodified, in the benchmarks.
+
 ## Other implementations
 
 The validator is santhosh-tekuri/jsonschema/v6 (see NOTICE). The wording

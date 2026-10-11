@@ -63,3 +63,23 @@ func ExampleNewSetWith() {
 	// false <nil>
 	// true /: gw..example is not a host name
 }
+
+// The specification's basic output format: each failure with its keyword
+// location, absolute keyword location and instance location.
+func ExampleSet_Output() {
+	set := jsonschema.NewSet()
+	_ = set.Add("evse.json", []byte(`{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"$id": "https://example.com/evse",
+		"properties": {"evseId": {"type": "integer", "minimum": 0}}
+	}`))
+	inst, _ := jsonschema.Decode([]byte(`{"evseId": -1}`))
+	out, _ := set.Output("evse.json", inst, jsonschema.OutputBasic)
+	fmt.Println(out.Valid)
+	for _, e := range out.Errors {
+		fmt.Println(e.KeywordLocation, e.AbsoluteKeywordLocation, e.InstanceLocation, e.Error)
+	}
+	// Output:
+	// false
+	// /properties/evseId/minimum https://example.com/evse#/properties/evseId/minimum /evseId must be >= 0.00000000
+}

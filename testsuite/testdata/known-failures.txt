@@ -6,8 +6,4 @@
 # Columns, separated by tabs: category, draft/file, group, test; an
 # optional "# note" after a tab says what happened.
 #
-# Categories (README.md, "JSON Schema Test Suite", explains each):
-#   integer-fraction-zero  a number with a zero fraction is an integer in
-#                          every draft (draft-04 says otherwise); kept on
-#                          purpose
-integer-fraction-zero	draft4/optional/zeroTerminatedFloats	some languages do not distinguish between different types of numeric value	a float is not an integer even without fractional part	# accepted invalid data
+# Since v0.3.0 the list is empty: every required and optional test passes.

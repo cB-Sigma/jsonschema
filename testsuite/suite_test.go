@@ -214,15 +214,112 @@ func TestSuite(t *testing.T) {
 	t.Log(b.String())
 }
 
+// TestOutputSuite runs the suite's output tests (output-tests/, drafts
+// 2019-09 and 2020-12): for each test, Set.Output in the basic format
+// must match the test's schema for it, and every format must match the
+// specification's output schema.
+func TestOutputSuite(t *testing.T) {
+	for _, dr := range drafts[3:] {
+		dir := filepath.Join(suiteDir, "output-tests", dr.dir)
+		outSchema, err := os.ReadFile(filepath.Join(dir, "output-schema.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files, err := filepath.Glob(filepath.Join(dir, "content", "*.json"))
+		if err != nil || len(files) == 0 {
+			t.Fatalf("no output tests in %s: %v", dir, err)
+		}
+		pass, total := 0, 0
+		for _, f := range files {
+			raw, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var groups []struct {
+				Description string          `json:"description"`
+				Schema      json.RawMessage `json:"schema"`
+				Tests       []struct {
+					Description string                     `json:"description"`
+					Data        json.RawMessage            `json:"data"`
+					Output      map[string]json.RawMessage `json:"output"`
+				} `json:"tests"`
+			}
+			if err := json.Unmarshal(raw, &groups); err != nil {
+				t.Fatalf("%s: %v", f, err)
+			}
+			for _, g := range groups {
+				for _, tc := range g.Tests {
+					total++
+					name := dr.dir + "/" + filepath.Base(f) + ": " + g.Description + ": " + tc.Description
+					if why := runOutputTest(dr.meta, outSchema, g.Schema, tc.Data, tc.Output); why != "" {
+						t.Errorf("%s: %s", name, why)
+						continue
+					}
+					pass++
+				}
+			}
+		}
+		t.Logf("%s output tests: %d/%d", dr.dir, pass, total)
+	}
+}
+
+func runOutputTest(meta string, outSchema, schema, data []byte, want map[string]json.RawMessage) string {
+	set := jsonschema.NewSet()
+	if err := set.Add(schemaName, schema); err != nil {
+		return err.Error()
+	}
+	inst, err := jsonschema.Decode(data)
+	if err != nil {
+		return err.Error()
+	}
+	check := jsonschema.NewSet()
+	if err := check.Add("output-schema.json", outSchema); err != nil {
+		return err.Error()
+	}
+	for f, test := range want {
+		test, err := withDialect(test, meta)
+		if err != nil {
+			return err.Error()
+		}
+		if err := check.Add("want-"+f+".json", test); err != nil {
+			return err.Error()
+		}
+	}
+	formats := map[string]jsonschema.OutputFormat{"flag": jsonschema.OutputFlag, "basic": jsonschema.OutputBasic,
+		"detailed": jsonschema.OutputDetailed, "verbose": jsonschema.OutputVerbose}
+	for fname, f := range formats {
+		out, err := set.Output(schemaName, inst, f)
+		if err != nil {
+			return fname + ": " + err.Error()
+		}
+		b, err := json.Marshal(out)
+		if err != nil {
+			return fname + ": " + err.Error()
+		}
+		if err := check.ValidateJSON("output-schema.json", b); err != nil {
+			return fname + " does not match the output schema: " + err.Error() + "\n" + string(b)
+		}
+		if _, ok := want[fname]; ok {
+			if err := check.ValidateJSON("want-"+fname+".json", b); err != nil {
+				return fname + ": " + err.Error() + "\n" + out.String()
+			}
+		}
+	}
+	return ""
+}
+
 // optionsFor is how a caller following the suite's intent configures a
 // set for a test file (rel is the path under the draft's directory,
 // without ".json"). The suite's optional/format tests are written for
 // format as an assertion, and draft7's optional/content tests for content
-// assertion; every other file runs with the defaults.
+// assertion, and draft4's optional/zeroTerminatedFloats for draft-04's
+// integer (Draft4Integer, which changes nothing in later drafts); every
+// other file runs with the defaults.
 func optionsFor(rel string) jsonschema.Options {
 	return jsonschema.Options{
 		AssertFormat:  strings.HasPrefix(rel, "optional/format/"),
 		AssertContent: strings.HasPrefix(rel, "optional/content"),
+		Draft4Integer: rel == "optional/zeroTerminatedFloats",
 	}
 }
 
@@ -261,6 +358,22 @@ func runGroup(opts jsonschema.Options, meta string, remotes []remote, g group) (
 			continue
 		}
 		err = set.Validate(schemaName, inst)
+		// every output format agrees with Validate and has the
+		// specification's shape: a failure lists at least one error
+		for _, f := range []jsonschema.OutputFormat{jsonschema.OutputBasic, jsonschema.OutputDetailed, jsonschema.OutputVerbose} {
+			o, oerr := set.Output(schemaName, inst, f)
+			switch {
+			case oerr != nil:
+				out[i] = fmt.Sprintf("output %d: %v", f, oerr)
+			case o.Valid != (err == nil):
+				out[i] = fmt.Sprintf("output %d says valid %v, Validate says %v", f, o.Valid, err)
+			case !o.Valid && o.Error == "" && len(o.Errors) == 0:
+				out[i] = fmt.Sprintf("output %d: a failure without errors", f)
+			}
+		}
+		if out[i] != "" {
+			continue
+		}
 		switch {
 		case tc.Valid && err != nil:
 			out[i] = "refused valid data: " + err.Error()
