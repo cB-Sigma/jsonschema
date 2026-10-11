@@ -13,7 +13,12 @@ Dependencies
 - github.com/santhosh-tekuri/jsonschema/v6 (Apache License 2.0, Copyright
   Santhosh Kumar Tekuri): the validator.
 - golang.org/x/text (BSD-3-Clause, Copyright The Go Authors): the
-  library's messages, used for failures this module does not word itself.
+  library's messages, used for failures this module does not word itself;
+  Unicode normalisation, case folding and the Bidi rule for the
+  internationalised host-name check.
+- golang.org/x/net (BSD-3-Clause, Copyright The Go Authors): its idna
+  package applies the CONTEXTJ rules (joining types) in the
+  internationalised host-name check.
 - The Go standard library (BSD-3-Clause, Copyright The Go Authors).
 
 Test data

@@ -1,6 +1,6 @@
 # jsonschema
 
-Validation against families of JSON Schema documents, with every failure as a JSON pointer, a keyword and a short message, in a stable order. A layer over santhosh-tekuri/jsonschema/v6.
+Validation against families of JSON Schema documents, with every failure as a JSON pointer, a keyword and a short message, in a stable order. A layer over santhosh-tekuri/jsonschema/v6 with its own format checkers and an ECMA-262 pattern engine.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/cB-Sigma/jsonschema.svg)](https://pkg.go.dev/github.com/cB-Sigma/jsonschema) [![test](https://github.com/cB-Sigma/jsonschema/actions/workflows/test.yml/badge.svg)](https://github.com/cB-Sigma/jsonschema/actions/workflows/test.yml) [![Licence: Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-blue.svg)](LICENSE) [![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)](go.mod)
 
@@ -10,10 +10,12 @@ OSCP schemas, are sets of files that refer to each other by file name,
 `$id`. This module keeps such a set in memory as added (corrections can be
 applied to a decoded copy first), resolves the references, validates with
 santhosh-tekuri/jsonschema/v6, and reports each failure in a form a
-protocol reply can carry. A pre-pass (`CheckSchemas`) refuses schemas that
-use keywords outside a dialect; the OCA's OCPP dialect is included. No
-cgo. Written for SigmaM2M, a oneM2M platform, where it validates OCPP
-1.6 to 2.1 and OSCP 2.0 messages and its OpenAPI requests.
+protocol reply can carry. Every format of JSON Schema 2020-12 is checked
+by this module's own code, and patterns are read as ECMA-262 regular
+expressions. A pre-pass (`CheckSchemas`) refuses schemas that use keywords
+outside a dialect; the OCA's OCPP dialect is included. No cgo. Written for
+SigmaM2M, a oneM2M platform, where it validates OCPP 1.6 to 2.1 and OSCP
+2.0 messages and its OpenAPI requests.
 
 ## Features
 
@@ -23,25 +25,52 @@ cgo. Written for SigmaM2M, a oneM2M platform, where it validates OCPP
 | Schema families: references by `$id`, by a document added under the whole URL, then by file name; nothing fetched from the network | yes |
 | Failures as pointer, keyword and our message, in a stable order (`ValidationError`, `Translate`, `Style`) | yes |
 | Numbers kept exact (`Decode` with `json.Number`; `integer` accepts any number whose fraction is zero) | yes |
-| Formats checked with our messages: date-time, date, time (with ranges and leap seconds), email, uri, uri-reference, ipv4, ipv6, uuid | yes |
-| Formats hostname, duration, json-pointer, relative-json-pointer, iri, iri-reference, uri-template | not checked (accepted) |
-| Formats idn-hostname, idn-email | not checked (the library has no checker) |
-| `format` as an annotation only, as 2020-12 defaults to | no: always asserted |
+| `format` as each draft says: an assertion in drafts 4, 6 and 7, an annotation in 2019-09 and 2020-12; `Options.AssertFormat` asserts it everywhere; the 2020-12 format-assertion vocabulary is honoured | yes |
+| Formats date-time, date, time (ranges, offsets, leap seconds), duration, email, idn-email, hostname, idn-hostname, ipv4, ipv6, uri, uri-reference, iri, iri-reference, uri-template, json-pointer, relative-json-pointer, uuid, regex, all with our messages | yes |
+| idn-hostname by IDNA2008 (RFC 5891 to 5893): Punycode round trip, derived property, CONTEXTJ and CONTEXTO rules, Bidi rule, after a lookup mapping | yes, see the notes below |
+| `pattern`, `patternProperties` and format `regex` as ECMA-262 with the u flag: lookahead, lookbehind, back references, named groups, `\p{...}`, pattern modifiers (`CompileRegexp`); `Options.GoRegexp` keeps Go's RE2 syntax | yes |
+| `contentEncoding`, `contentMediaType` and `contentSchema` as assertions (`Options.AssertContent`); annotations by default | yes |
 | Dialects: refuse keywords outside an allowed set before use (`Dialect`, `CheckSchemas`, `OCA()`) | yes |
-| `pattern` with ECMA-262 semantics | no: Go RE2 syntax (the library's) |
 | Output formats of the specification (flag, basic, detailed) | no: use the library directly |
+| A number with a zero fraction refused as `integer` in draft-04 | no, on purpose: one rule for every draft |
+
+Notes on the checkers:
+
+- **idn-hostname** maps each label as a lookup would before checking it
+  (default-ignorable characters other than the two joiners dropped, then
+  NFKC and case folding). This approximates the UTS 46 mapping table
+  rather than reading it. The IDNA2008 derived property is computed from
+  Go's Unicode tables and golang.org/x/text, not read from the IANA
+  registry, so it follows the Unicode version of the Go release used. The
+  joining types for the CONTEXTJ rules come from golang.org/x/net/idna.
+- **Patterns** that need no lookaround, back reference, multiline anchor
+  or counted repeat above 1000 are translated to Go's RE2 syntax and match
+  in linear time. Others run on a backtracking matcher that follows the
+  ECMA-262 matching rules and gives up, as no match, after `MaxSteps`
+  steps (about 40 ms on the laptop it was measured on), so a hostile input cannot hold a validator. Case
+  folding under `i` is simple case folding. `\p{Script=...}` takes script
+  names (`Greek`), not four-letter codes (`Grek`), and Script_Extensions
+  is read as Script. Binary properties are those in Go's tables plus
+  Any, ASCII, Assigned, Alphabetic, Lowercase, Uppercase, Math, ID_Start,
+  ID_Continue and Default_Ignorable_Code_Point; emoji properties are
+  refused at compile.
+- **email** is an RFC 5321 mailbox: dot-string or quoted local part of at
+  most 64 octets, a host name or an IPv4 or IPv6 address literal. Comments,
+  display names and other address literals are refused.
 
 ## Choosing a Go JSON Schema validator
 
 Compared from each project's source or README at the versions named, in
 October 2026. Check the projects themselves before relying on a row.
 
-| | this module | santhosh-tekuri/jsonschema v6.0.3 | kaptinlin/jsonschema v0.9.9 | xeipuuv/gojsonschema v1.2.0 |
+| | this module v0.2.0 | santhosh-tekuri/jsonschema v6.0.3 | kaptinlin/jsonschema v0.9.9 | xeipuuv/gojsonschema v1.2.0 |
 |---|---|---|---|---|
 | What it is | a layer over santhosh-tekuri v6 | a validator | a validator | a validator |
 | Drafts | 4, 6, 7, 2019-09, 2020-12 | 4, 6, 7, 2019-09, 2020-12 | 4, 6, 7, 2019-09, 2020-12 | 4, 6, 7 |
 | Default draft without `$schema` | 7 | 2020-12 | 2020-12 | not compared |
-| JSON Schema Test Suite | run here (below) | run in its CI | not stated in its README | not compared |
+| JSON Schema Test Suite | run here, required and optional (below) | run in its CI | not stated in its README | not compared |
+| Formats idn-hostname, idn-email | yes | no checker | not compared | not compared |
+| Patterns | ECMA-262 (u flag), RE2 where possible | Go RE2, or an engine you plug in | not compared | Go RE2 |
 | Families with mismatched file names and `$id` | yes | through a custom loader | not compared | not compared |
 | Failure list in a stable order, own wording | yes | output formats of the specification | its own | its own |
 | Keyword dialect refusal before use | yes | vocabularies (2019-09 and later) | not compared | no |
@@ -49,10 +78,11 @@ October 2026. Check the projects themselves before relying on a row.
 
 Pick this module when you validate protocol messages against a family of
 published schemas and need failures you can put in a reply, in the same
-order every time. Pick santhosh-tekuri/jsonschema/v6 directly for
-everything else: it is the engine here, and gives the specification's
-output formats. Pick kaptinlin/jsonschema to validate Go structs or to
-build schemas in code.
+order every time, or when patterns and formats must follow the
+specification exactly. Pick santhosh-tekuri/jsonschema/v6 directly when
+you want the specification's output formats or your own extension
+vocabularies: it is the engine here. Pick kaptinlin/jsonschema to validate
+Go structs or to build schemas in code.
 
 ## Install
 
@@ -80,7 +110,14 @@ if errors.As(err, &v) {
 }
 ```
 
-`Example` in example_test.go runs this and checks its output.
+To assert `format` in 2019-09 and 2020-12 documents too:
+
+```go
+set := jsonschema.NewSetWith(jsonschema.Options{AssertFormat: true})
+```
+
+`Example` and `ExampleNewSetWith` in example_test.go run these and check
+their output.
 
 ## Documentation
 
@@ -88,7 +125,7 @@ API reference: https://pkg.go.dev/github.com/cB-Sigma/jsonschema
 
 | Package | What it does |
 |---|---|
-| `jsonschema` (module root) | `NewSet`, `NewDialectSet`, `Set.Add`, `AddValue`, `Compile`, `ValidateJSON`, `Validate`, `Decode`; `ValidationError`, `Translate` and `Style` (the wording of the library's failures, for callers that compile with the library themselves); `Dialect`, `CheckSchemas`, `OCA()` |
+| `jsonschema` (module root) | `NewSet`, `NewSetWith` and `Options`, `NewDialectSet`, `Set.Add`, `AddValue`, `Compile`, `ValidateJSON`, `Validate`, `Decode`; `ValidationError`, `Translate` and `Style` (the wording of the library's failures, for callers that compile with the library themselves); `CompileRegexp` and `Regexp` (ECMA-262 patterns, usable as the library's regexp engine); `Dialect`, `CheckSchemas`, `OCA()` |
 | `testsuite` (nested module, tests only) | runs the JSON Schema Test Suite against this module |
 
 ## Testing
@@ -99,47 +136,54 @@ go test -race ./...
 
 Tests carry `// Covers: SIG-...` comments: these are requirement IDs of
 the SigmaM2M project's compliance report and have no meaning outside it.
+`FuzzRegexp` checks that a translated pattern matches as the backtracking
+matcher does; `FuzzFormats` runs every checker on arbitrary strings.
 
 ### JSON Schema Test Suite
 
 The [JSON-Schema-Test-Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite)
 (MIT) is vendored in the test-only nested module `testsuite/`, at commit
 `7de0e6a06031ede80028583dd45d0cd41105ae5b` (2026-10-09). Its test runs
-every case of draft4, draft6, draft7, draft2019-09 and draft2020-12
-through `NewSet`, `Set.Add`, `Set.Compile`, `Decode` and `Set.Validate`,
-with the suite's remotes added to each set under their
-`http://localhost:1234/` URLs. A schema without `$schema` is given the
-directory's draft before `Add`, which is how a caller picks a draft other
-than the draft-07 default.
+every case of draft4, draft6, draft7, draft2019-09 and draft2020-12,
+required and optional, through `NewSetWith`, `Set.Add`, `Set.Compile`,
+`Decode` and `Set.Validate`, with the suite's remotes added to each set
+under their `http://localhost:1234/` URLs. A schema without `$schema` is
+given the directory's draft before `Add`, which is how a caller picks a
+draft other than the draft-07 default.
+
+Each file runs with the options its tests are written for: the files
+under `optional/format/` with `AssertFormat`, draft7's
+`optional/content` with `AssertContent`, and every other file, the
+required `format.json` tests included, with the defaults (ECMA-262
+patterns).
 
 | Draft | Required | Optional | Optional, format |
 |---|---|---|---|
-| draft4 | 618/618 | 85/100 | 253/291 |
-| draft6 | 841/841 | 92/106 | 336/414 |
-| draft7 | 929/929 | 100/118 | 607/804 |
-| draft2019-09 | 1261/1261 | 144/158 | 663/885 |
-| draft2020-12 | 1292/1301 | 148/162 | 663/885 |
+| draft4 | 618/618 | 99/100 | 291/291 |
+| draft6 | 841/841 | 106/106 | 414/414 |
+| draft7 | 929/929 | 118/118 | 804/804 |
+| draft2019-09 | 1261/1261 | 158/158 | 885/885 |
+| draft2020-12 | 1301/1301 | 162/162 | 885/885 |
+
+v0.1.0 passed 1292/1301 required tests of draft2020-12 (format was always
+asserted) and failed 841 optional tests (formats not checked, laxer email
+and URI checkers, Go RE2 patterns, content not asserted).
 
 Run it with `cd testsuite && go test -v ./...`. The test fails when a test
 outside `testsuite/testdata/known-failures.txt` fails, when a listed test
-passes, or when a listed test is no longer in the suite. The 841 listed
-failures, by cause:
+passes, or when a listed test is no longer in the suite, for required and
+optional tests alike. The one listed failure:
 
 | Cause | Tests | What it is |
 |---|---|---|
-| format not checked | 408 | the formats listed as not checked above |
-| own format checker | 133 | email follows Go's net/mail (no IPv6 literals or quoted local parts with spaces; accepts some invalid domains and non-ASCII); uri and uri-reference follow Go's net/url and accept characters the suite refuses |
-| format unknown | 189 | idn-hostname and idn-email |
-| RE2 patterns | 97 | `pattern`, `patternProperties` and format `regex` use Go's RE2 syntax, not ECMA-262 |
-| format asserted | 9 | draft2020-12's required `format.json` expects `format` to be an annotation |
-| content not asserted | 4 | draft7 optional: `contentEncoding` and `contentMediaType` carry no check |
-| integer with zero fraction | 1 | draft4 optional: `1.0` counts as an integer in every draft |
+| integer with zero fraction | 1 | draft4 optional: `1.0` counts as an integer in every draft, as JSON has one number type; the suite marks this behaviour as language-dependent |
 
-Every required test passes except the nine on `format` as an annotation.
-The run found and fixed two bugs in this module: a document added under
-a full URL without an `$id` (as the suite's remotes are) was not found
-by that URL, and the time and date-time checks accepted hours, minutes
-and offsets out of range and refused leap seconds.
+The run found and fixed, in v0.1.0, two bugs in this module: a document
+added under a full URL without an `$id` (as the suite's remotes are) was
+not found by that URL, and the time and date-time checks accepted hours,
+minutes and offsets out of range and refused leap seconds. In v0.2.0 it
+found that the translation of a failed `contentSchema` reported the
+decoded content's failures at the instance's pointers.
 
 ### Interop tested against
 
@@ -156,7 +200,7 @@ None. This module has no simulator.
 
 ## Status
 
-v0.x: the API may change before v1.
+v0.x: the API may change before v1. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 

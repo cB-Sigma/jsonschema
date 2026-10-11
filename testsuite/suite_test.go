@@ -111,6 +111,7 @@ func TestSuite(t *testing.T) {
 			case strings.HasPrefix(rel, "optional/"):
 				k = optional
 			}
+			opts := optionsFor(rel)
 			raw, err := os.ReadFile(f)
 			if err != nil {
 				t.Fatal(err)
@@ -120,7 +121,7 @@ func TestSuite(t *testing.T) {
 				t.Fatalf("%s: %v", f, err)
 			}
 			for _, g := range groups {
-				results := runGroup(dr.meta, remotes, g)
+				results := runGroup(opts, dr.meta, remotes, g)
 				for i, tc := range g.Tests {
 					id := dr.dir + "/" + rel + "\t" + g.Description + "\t" + tc.Description
 					for n := 2; seen[id]; n++ {
@@ -213,10 +214,22 @@ func TestSuite(t *testing.T) {
 	t.Log(b.String())
 }
 
+// optionsFor is how a caller following the suite's intent configures a
+// set for a test file (rel is the path under the draft's directory,
+// without ".json"). The suite's optional/format tests are written for
+// format as an assertion, and draft7's optional/content tests for content
+// assertion; every other file runs with the defaults.
+func optionsFor(rel string) jsonschema.Options {
+	return jsonschema.Options{
+		AssertFormat:  strings.HasPrefix(rel, "optional/format/"),
+		AssertContent: strings.HasPrefix(rel, "optional/content"),
+	}
+}
+
 // runGroup validates each test's data against the group's schema in a new
-// set holding the remotes, and returns for each test "" when the outcome
-// is the expected one, or what happened.
-func runGroup(meta string, remotes []remote, g group) (out []string) {
+// set with the options, holding the remotes, and returns for each test ""
+// when the outcome is the expected one, or what happened.
+func runGroup(opts jsonschema.Options, meta string, remotes []remote, g group) (out []string) {
 	out = make([]string, len(g.Tests))
 	defer func() {
 		if r := recover(); r != nil {
@@ -225,7 +238,7 @@ func runGroup(meta string, remotes []remote, g group) (out []string) {
 			}
 		}
 	}()
-	set := jsonschema.NewSet()
+	set := jsonschema.NewSetWith(opts)
 	for _, r := range remotes {
 		if err := set.Add(r.url, r.raw); err != nil {
 			return fill(out, "remote: "+err.Error())

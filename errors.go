@@ -297,6 +297,13 @@ func (t *translator) walk(e *v6.ValidationError, rebase []string) {
 		t.add(toks, "false", "no value is allowed here")
 	case *kind.RefCycle:
 		t.add(toks, "$ref", "schema references nest too deeply")
+	case *kind.ContentEncoding:
+		t.add(toks, "contentEncoding", "is not %s (contentEncoding)", k.Want)
+	case *kind.ContentMediaType:
+		t.add(toks, "contentMediaType", "is not %s (contentMediaType)", k.Want)
+	case *kind.ContentSchema:
+		// the causes are located in the decoded content, not the instance
+		t.add(toks, "contentSchema", "the decoded content does not match contentSchema")
 	default:
 		kw := ""
 		if kp := e.ErrorKind.KeywordPath(); len(kp) > 0 {

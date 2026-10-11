@@ -27,6 +27,21 @@ NOTICE). That run led to two fixes: documents added under a full URL are
 found by that URL, and the time and date-time formats check ranges,
 offsets and leap seconds (RFC 3339 section 5.6 and 5.7).
 
+For v0.2.0 (2026-10-11) the rest of the formats and the pattern engine
+were written for this module from the specifications, with no code ported
+from another validator or regular-expression engine: RFC 3339 (duration),
+RFC 1123 (hostname), RFC 5890, 5891, 5892 and 5893 (IDNA2008), RFC 3492
+(Punycode), RFC 5321 and 6531 (email, idn-email), RFC 3986 and 3987 (URI,
+IRI), RFC 6570 (URI templates), RFC 6901 and the relative JSON pointer
+draft, and ECMA-262 (pattern syntax and matching, read with the u flag).
+The suite's optional tests were the check. The IDNA2008 exception list
+(RFC 5892 section 2.6) and the CONTEXTO rules are facts taken from that
+RFC; the derived property is computed from Go's Unicode tables; the
+CONTEXTJ rules are applied by golang.org/x/net/idna, used unmodified as a
+dependency. SigmaM2M's OpenAPI code had a smaller ECMA-262 to RE2
+translator (one top-level lookahead); `CompileRegexp` replaces that
+approach and shares no code with it.
+
 ## Other implementations
 
 The validator is santhosh-tekuri/jsonschema/v6 (see NOTICE). The wording

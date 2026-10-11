@@ -44,3 +44,22 @@ func Example() {
 	// /reading/at format
 	// /reading/kWh minimum
 }
+
+// In a 2020-12 document format is an annotation unless the set asserts
+// it; patterns are ECMA-262.
+func ExampleNewSetWith() {
+	schema := []byte(`{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"type": "string",
+		"format": "hostname",
+		"pattern": "^(?!-)[a-z0-9.-]+$"
+	}`)
+	for _, assert := range []bool{false, true} {
+		set := jsonschema.NewSetWith(jsonschema.Options{AssertFormat: assert})
+		_ = set.Add("host.json", schema)
+		fmt.Println(assert, set.ValidateJSON("host.json", []byte(`"gw..example"`)))
+	}
+	// Output:
+	// false <nil>
+	// true /: gw..example is not a host name
+}

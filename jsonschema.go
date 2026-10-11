@@ -14,12 +14,16 @@
 // when it names none).
 //
 // What this package adds to the library: the documents are kept in memory
-// as added (corrections can be applied to a decoded copy before Add), the
-// formats date-time, date, time, email, uri, uri-reference, ipv4, ipv6 and
-// uuid are checked with our messages and the library's other formats are
-// not checked, failures are listed in a stable order (see Translate), and
-// CheckSchemas walks the schemas before use to refuse keywords outside a
-// dialect (dialect.go).
+// as added (corrections can be applied to a decoded copy before Add),
+// every format of JSON Schema 2020-12 is checked by our own checkers with
+// our messages (formats.go, uri.go, idna.go), patterns are ECMA-262
+// regular expressions (ecma.go), failures are listed in a stable order
+// (see Translate), and CheckSchemas walks the schemas before use to refuse
+// keywords outside a dialect (dialect.go).
+//
+// format is an assertion in drafts 4, 6 and 7 and an annotation in drafts
+// 2019-09 and 2020-12, as those drafts say; Options.AssertFormat asserts it
+// in every draft.
 //
 // Instances are decoded with json.Number (Decode), so integers keep their
 // precision and "integer" accepts any number whose fraction is zero.
@@ -30,15 +34,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/mail"
-	"net/netip"
 	"net/url"
 	"path"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	v6 "github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -50,6 +50,7 @@ type Set struct {
 	byID   map[string]*doc // absolute $id without fragment
 
 	dialect *Dialect // nil: no keyword refusal in CheckSchemas
+	opts    Options
 
 	mu       sync.Mutex
 	compiler *v6.Compiler          // created at the first compile; the set is frozen then
@@ -63,18 +64,43 @@ type doc struct {
 	root any
 }
 
-// NewSet returns an empty set.
-func NewSet() *Set {
-	return &Set{byName: map[string]*doc{}, byID: map[string]*doc{}, compiled: map[string]*v6.Schema{}, byURL: map[string]any{}}
+// Options choose how a Set made by NewSetWith validates. The zero value is
+// what NewSet gives.
+type Options struct {
+	// Dialect, when set, is applied by CheckSchemas (see NewDialectSet).
+	Dialect *Dialect
+
+	// AssertFormat makes "format" an assertion in every draft. Without
+	// it, format is an assertion in drafts 4, 6 and 7, and an annotation
+	// in drafts 2019-09 and 2020-12 unless the document's meta-schema
+	// requires the format-assertion vocabulary (2020-12) or the format
+	// vocabulary (2019-09). Unknown formats are never asserted.
+	AssertFormat bool
+
+	// AssertContent makes contentEncoding (base64) and contentMediaType
+	// (application/json) assertions, and contentSchema with them (2019-09
+	// and later). Without it they are annotations.
+	AssertContent bool
+
+	// GoRegexp reads "pattern", "patternProperties" and format "regex"
+	// with Go's regexp syntax (RE2), as v0.1 did, instead of ECMA-262
+	// (CompileRegexp).
+	GoRegexp bool
+}
+
+// NewSet returns an empty set. format is asserted in drafts 4, 6 and 7
+// only (see Options.AssertFormat).
+func NewSet() *Set { return NewSetWith(Options{}) }
+
+// NewSetWith returns an empty set with the options.
+func NewSetWith(o Options) *Set {
+	return &Set{byName: map[string]*doc{}, byID: map[string]*doc{}, compiled: map[string]*v6.Schema{}, byURL: map[string]any{},
+		dialect: o.Dialect, opts: o}
 }
 
 // NewDialectSet returns an empty set whose CheckSchemas applies the
-// dialect.
-func NewDialectSet(d *Dialect) *Set {
-	s := NewSet()
-	s.dialect = d
-	return s
-}
+// dialect; it is NewSetWith(Options{Dialect: d}).
+func NewDialectSet(d *Dialect) *Set { return NewSetWith(Options{Dialect: d}) }
 
 // Add parses a schema document and adds it under name (its file name).
 func (s *Set) Add(name string, raw []byte) error {
@@ -185,12 +211,19 @@ func docURL(name string) string { return "mem:///" + url.PathEscape(name) }
 func (s *Set) newCompiler() *v6.Compiler {
 	c := v6.NewCompiler()
 	c.DefaultDraft(v6.Draft7)
-	c.AssertFormat()
+	if s.opts.AssertFormat {
+		c.AssertFormat()
+	}
+	if s.opts.AssertContent {
+		c.AssertContent()
+	}
+	if !s.opts.GoRegexp {
+		c.UseRegexpEngine(func(src string) (v6.Regexp, error) { return CompileRegexp(src) })
+	}
 	for _, f := range ignoredFormats {
 		c.RegisterFormat(&v6.Format{Name: f, Validate: func(any) error { return nil }})
 	}
-	for name, check := range ownFormats {
-		check := check
+	for name, check := range checkers {
 		c.RegisterFormat(&v6.Format{Name: name, Validate: func(v any) error {
 			if str, ok := v.(string); ok {
 				if msg := check(str); msg != "" {
@@ -232,7 +265,36 @@ func (l loader) Load(u string) (any, error) {
 		return nil, fmt.Errorf("%s: no such schema in the set", u)
 	}
 	s.byURL[u] = d.root
-	return d.root, nil
+	return withFormatAssertion(d.root), nil
+}
+
+const formatAssertionVocab = "https://json-schema.org/draft/2020-12/vocab/format-assertion"
+
+// withFormatAssertion gives the library a meta-schema that lists the
+// 2020-12 format-assertion vocabulary as optional (false) as one that
+// requires it: this package implements the vocabulary, and an
+// implementation that does applies it either way. The document itself is
+// not changed.
+func withFormatAssertion(root any) any {
+	m, ok := root.(map[string]any)
+	if !ok {
+		return root
+	}
+	voc, ok := m["$vocabulary"].(map[string]any)
+	if !ok || voc[formatAssertionVocab] != false {
+		return root
+	}
+	m2 := make(map[string]any, len(m))
+	for k, v := range m {
+		m2[k] = v
+	}
+	voc2 := make(map[string]any, len(voc))
+	for k, v := range voc {
+		voc2[k] = v
+	}
+	voc2[formatAssertionVocab] = true
+	m2["$vocabulary"] = voc2
+	return m2
 }
 
 // Decode parses JSON the way Validate expects instances (numbers as
@@ -254,107 +316,6 @@ func decode(data []byte) (any, error) {
 		return nil, errors.New("data after the JSON value")
 	}
 	return v, nil
-}
-
-// ignoredFormats are the formats the library knows that this package does
-// not check ("regex" cannot be replaced; no OCA schema uses it).
-var ignoredFormats = []string{"json-pointer", "relative-json-pointer", "duration", "period", "hostname",
-	"iri", "iri-reference", "uri-template", "semver"}
-
-var (
-	dateTimeRE = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$`)
-	timeRE     = regexp.MustCompile(`^\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$`)
-	uuidRE     = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-)
-
-// ownFormats return why a string is not in the format, or "".
-var ownFormats = map[string]func(s string) string{
-	"date-time": func(s string) string {
-		if !dateTimeRE.MatchString(s) {
-			return "is not an RFC 3339 date-time with a time zone"
-		}
-		if _, err := time.Parse("2006-01-02", s[:10]); err != nil || !validTime(s[11:]) {
-			return "is not a valid date-time"
-		}
-		return ""
-	},
-	"date": func(s string) string {
-		if _, err := time.Parse("2006-01-02", s); err != nil {
-			return "is not an RFC 3339 full-date"
-		}
-		return ""
-	},
-	"time": func(s string) string {
-		if !timeRE.MatchString(s) || !validTime(s) {
-			return "is not an RFC 3339 full-time"
-		}
-		return ""
-	},
-	"email": func(s string) string {
-		if _, err := mail.ParseAddress(s); err != nil || strings.ContainsAny(s, "<> ") {
-			return "is not an e-mail address"
-		}
-		return ""
-	},
-	"ipv4": func(s string) string {
-		if a, err := netip.ParseAddr(s); err != nil || !a.Is4() {
-			return "is not an IPv4 address"
-		}
-		return ""
-	},
-	"ipv6": func(s string) string {
-		if a, err := netip.ParseAddr(s); err != nil || !a.Is6() || a.Zone() != "" {
-			return "is not an IPv6 address"
-		}
-		return ""
-	},
-	"uri": func(s string) string {
-		if u, err := url.Parse(s); err != nil || !u.IsAbs() {
-			return "is not an absolute URI"
-		}
-		return ""
-	},
-	"uri-reference": func(s string) string {
-		if _, err := url.Parse(s); err != nil {
-			return "is not a URI reference"
-		}
-		return ""
-	},
-	"uuid": func(s string) string {
-		if !uuidRE.MatchString(s) {
-			return "is not a UUID"
-		}
-		return ""
-	},
-}
-
-// validTime checks the ranges of an RFC 3339 full-time that matched timeRE
-// (or the time part of a date-time): hours below 24, minutes below 60, an
-// offset of at most 23:59, and second 60 only where the time is 23:59 in
-// UTC (a leap second, RFC 3339 section 5.7).
-func validTime(s string) bool {
-	two := func(i int) int { return int(s[i]-'0')*10 + int(s[i+1]-'0') }
-	h, m, sec := two(0), two(3), two(6)
-	if h > 23 || m > 59 || sec > 60 {
-		return false
-	}
-	off := 0
-	if z := s[len(s)-1]; z != 'Z' && z != 'z' {
-		o := s[len(s)-6:]
-		oh, om := int(o[1]-'0')*10+int(o[2]-'0'), int(o[4]-'0')*10+int(o[5]-'0')
-		if oh > 23 || om > 59 {
-			return false
-		}
-		off = oh*60 + om
-		if o[0] == '-' {
-			off = -off
-		}
-	}
-	if sec == 60 {
-		utc := ((h*60+m-off)%1440 + 1440) % 1440
-		return utc == 23*60+59
-	}
-	return true
 }
 
 // Keywords are the draft-07 keywords (and $schema, $id, $comment, title,

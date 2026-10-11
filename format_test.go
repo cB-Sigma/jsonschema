@@ -31,7 +31,7 @@ func TestFormatRanges(t *testing.T) {
 		{"ipv6", "fe80::1", true},
 		{"ipv6", "fe80::1%eth0", false},
 	} {
-		got := ownFormats[c.format](c.value) == ""
+		got := checkers[c.format](c.value) == ""
 		if got != c.ok {
 			t.Errorf("%s %q: valid %v, want %v", c.format, c.value, got, c.ok)
 		}

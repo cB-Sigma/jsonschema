@@ -112,8 +112,8 @@ func TestOCADialect(t *testing.T) {
 }
 
 // What the earlier validator did on purpose and the library must keep:
-// numbers compared exactly beyond float64, "integer" taking 2.0, formats
-// outside our list not checked, a reference resolved by file name when no
+// numbers compared exactly beyond float64, "integer" taking 2.0, unknown
+// formats (such as the OCA's "UTF8") not checked, a reference resolved by file name when no
 // document carries the $id it resolves to, and siblings of $ref ignored
 // in a draft-07 document.
 //
@@ -121,7 +121,7 @@ func TestOCADialect(t *testing.T) {
 func TestDraft07Specials(t *testing.T) {
 	s := NewSet()
 	for name, src := range map[string]string{
-		"n.json":      `{"type":"object","properties":{"big":{"type":"integer","maximum":9007199254740992},"i":{"type":"integer"},"h":{"type":"string","format":"hostname"},"d":{"type":"string","format":"duration"}}}`,
+		"n.json":      `{"type":"object","properties":{"big":{"type":"integer","maximum":9007199254740992},"i":{"type":"integer"},"h":{"type":"string","format":"UTF8"},"d":{"type":"string","format":"x-vendor"}}}`,
 		"r.json":      `{"$id":"http://x.example/a/r.json","properties":{"t":{"$ref":"target.json"},"s":{"$ref":"target.json","maxLength":1}}}`,
 		"target.json": `{"$id":"http://x.example/elsewhere/other-name.json","type":"string","minLength":2}`,
 	} {
