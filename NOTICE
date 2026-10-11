@@ -1,0 +1,32 @@
+jsonschema (a JSON Schema layer for schema families, in Go)
+Copyright 2026 Abhinav Gautam
+
+This module is licensed under the Apache License, Version 2.0 (LICENSE).
+
+The code was written for SigmaM2M. It contains no code from other projects
+and no schema files. The source files that come from SigmaM2M carry no
+per-file copyright header; the copyright line above covers them.
+
+Dependencies
+------------
+
+- github.com/santhosh-tekuri/jsonschema/v6 (Apache License 2.0, Copyright
+  Santhosh Kumar Tekuri): the validator.
+- golang.org/x/text (BSD-3-Clause, Copyright The Go Authors): the
+  library's messages, used for failures this module does not word itself.
+- The Go standard library (BSD-3-Clause, Copyright The Go Authors).
+
+Test data
+---------
+
+The schemas and documents in the tests are written for the tests.
+
+The test-only nested module testsuite/ (github.com/cB-Sigma/jsonschema/testsuite,
+not part of this module's build) vendors files of the JSON Schema Test
+Suite (https://github.com/json-schema-org/JSON-Schema-Test-Suite, commit
+7de0e6a06031ede80028583dd45d0cd41105ae5b of 2026-10-09) under
+testsuite/testdata/JSON-Schema-Test-Suite/: the tests of draft4, draft6,
+draft7, draft2019-09 and draft2020-12, the remotes, and its LICENSE.
+They are licensed under the MIT License:
+
+  Copyright (c) 2012 Julian Berman
