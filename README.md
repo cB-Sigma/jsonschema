@@ -145,7 +145,7 @@ Requires Go 1.26 or later.
 ```go
 import "github.com/cB-Sigma/jsonschema"
 
-set := jsonschema.NewSet()
+set := jsonschema.NewSet(jsonschema.Options{})
 err := set.Add("meter.json", meterSchema)    // refers to "reading.json"
 err = set.Add("reading.json", readingSchema)
 
@@ -161,10 +161,10 @@ if errors.As(err, &v) {
 To assert `format` in 2019-09 and 2020-12 documents too:
 
 ```go
-set := jsonschema.NewSetWith(jsonschema.Options{AssertFormat: true})
+set := jsonschema.NewSet(jsonschema.Options{AssertFormat: true})
 ```
 
-`Example` and `ExampleNewSetWith` in example_test.go run these and check
+`Example` and `ExampleNewSet_options` in example_test.go run these and check
 their output.
 
 ## Documentation
@@ -173,9 +173,21 @@ API reference: https://pkg.go.dev/github.com/cB-Sigma/jsonschema
 
 | Package | What it does |
 |---|---|
-| `jsonschema` (module root) | `NewSet`, `NewSetWith` and `Options`, `NewDialectSet`, `Set.Add`, `AddValue`, `Compile`, `ValidateJSON`, `Validate`, `ValidateGo`, `Decode`; `Output`, `OutputFormat` and `OutputUnit` (the specification's output formats); `ValidationError`, `Translate` and `Style` (the wording of the library's failures, for callers that compile with the library themselves); `CompileRegexp` and `Regexp` (ECMA-262 patterns, usable as the library's regexp engine); `Dialect`, `CheckSchemas`, `OCA()` |
+| `jsonschema` (module root) | `NewSet` and `Options`, `Set.Add`, `AddValue`, `Compile`, `ValidateJSON`, `Validate`, `ValidateGo`, `Decode`; `Output`, `OutputFormat` and `OutputUnit` (the specification's output formats); `ValidationError`, `Translate` and `Style` (the wording of the library's failures, for callers that compile with the library themselves); `CompileRegexp` and `Regexp` (ECMA-262 patterns, usable as the library's regexp engine); `Dialect`, `CheckSchemas`, `OCA()`, `Keywords()`, `Keywords2020()` |
 | `testsuite` (nested module, tests only) | runs the JSON Schema Test Suite against this module |
 | `bench` (nested module, benchmarks only) | compares this module with santhosh-tekuri/jsonschema/v6 and kaptinlin/jsonschema |
+
+Third-party types: no exported signature names a type of
+santhosh-tekuri/jsonschema/v6. `Translate` is the one deliberate tie: it
+reads that library's v6 error values, for callers that compile schemas
+with v6 themselves (an OpenAPI validator, for one), so this module stays
+on v6 for the whole of its v1.
+
+Errors: branch with `errors.As` on `ValidationError` and on each
+`Error.Keyword` and `Error.Path`, never on message text. Other errors
+start with `jsonschema: `; a `ValidationError`'s text has no prefix, so it
+can be shown to the document's sender as it is. A `Set` is safe for
+concurrent use once every document is added.
 
 ## Testing
 
@@ -194,7 +206,7 @@ The [JSON-Schema-Test-Suite](https://github.com/json-schema-org/JSON-Schema-Test
 (MIT) is vendored in the test-only nested module `testsuite/`, at commit
 `7de0e6a06031ede80028583dd45d0cd41105ae5b` (2026-10-09). Its test runs
 every case of draft4, draft6, draft7, draft2019-09 and draft2020-12,
-required and optional, through `NewSetWith`, `Set.Add`, `Set.Compile`,
+required and optional, through `NewSet`, `Set.Add`, `Set.Compile`,
 `Decode` and `Set.Validate`, with the suite's remotes added to each set
 under their `http://localhost:1234/` URLs. A schema without `$schema` is
 given the directory's draft before `Add`, which is how a caller picks a

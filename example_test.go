@@ -13,7 +13,7 @@ import (
 // A family of two schema documents that refer to each other by file name;
 // every failure comes back as pointer, keyword and message, in order.
 func Example() {
-	set := jsonschema.NewSet()
+	set := jsonschema.NewSet(jsonschema.Options{})
 	_ = set.Add("meter.json", []byte(`{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type": "object",
@@ -47,7 +47,7 @@ func Example() {
 
 // In a 2020-12 document format is an annotation unless the set asserts
 // it; patterns are ECMA-262.
-func ExampleNewSetWith() {
+func ExampleNewSet_options() {
 	schema := []byte(`{
 		"$schema": "https://json-schema.org/draft/2020-12/schema",
 		"type": "string",
@@ -55,7 +55,7 @@ func ExampleNewSetWith() {
 		"pattern": "^(?!-)[a-z0-9.-]+$"
 	}`)
 	for _, assert := range []bool{false, true} {
-		set := jsonschema.NewSetWith(jsonschema.Options{AssertFormat: assert})
+		set := jsonschema.NewSet(jsonschema.Options{AssertFormat: assert})
 		_ = set.Add("host.json", schema)
 		fmt.Println(assert, set.ValidateJSON("host.json", []byte(`"gw..example"`)))
 	}
@@ -67,7 +67,7 @@ func ExampleNewSetWith() {
 // The specification's basic output format: each failure with its keyword
 // location, absolute keyword location and instance location.
 func ExampleSet_Output() {
-	set := jsonschema.NewSet()
+	set := jsonschema.NewSet(jsonschema.Options{})
 	_ = set.Add("evse.json", []byte(`{
 		"$schema": "https://json-schema.org/draft/2020-12/schema",
 		"$id": "https://example.com/evse",

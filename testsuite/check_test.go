@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -48,7 +49,7 @@ func TestCheckSchemasSuite(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, g := range groups {
-				set := jsonschema.NewSet()
+				set := jsonschema.NewSet(jsonschema.Options{})
 				for _, r := range remotes {
 					if err := set.Add(r.url, r.raw); err != nil {
 						t.Fatal(err)
@@ -73,7 +74,7 @@ func TestCheckSchemasSuite(t *testing.T) {
 				}
 				for _, e := range ve {
 					switch {
-					case strings.Contains(e.Message, "is not supported") && !jsonschema.Keywords[e.Keyword] && !jsonschema.Keywords2020[e.Keyword]:
+					case strings.Contains(e.Message, "is not supported") && !slices.Contains(jsonschema.Keywords(), e.Keyword) && !slices.Contains(jsonschema.Keywords2020(), e.Keyword):
 					case strings.Contains(e.Message, "no such schema in the set") && strings.Contains(e.Message, "json-schema.org"):
 					case strings.Contains(e.Message, "refers back to itself"):
 					default:

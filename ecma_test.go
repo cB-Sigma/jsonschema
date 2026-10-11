@@ -185,14 +185,14 @@ func TestRegexpStepLimit(t *testing.T) {
 // Options.GoRegexp.
 func TestPatternEngineOption(t *testing.T) {
 	src := `{"type":"string","pattern":"^\\s$"}`
-	ecma := NewSet()
+	ecma := NewSet(Options{})
 	if err := ecma.Add("p.json", []byte(src)); err != nil {
 		t.Fatal(err)
 	}
 	if err := ecma.ValidateJSON("p.json", []byte("\"\U00002003\"")); err != nil {
 		t.Errorf("ECMA-262: EM SPACE is \\s: %v", err)
 	}
-	re2 := NewSetWith(Options{GoRegexp: true})
+	re2 := NewSet(Options{GoRegexp: true})
 	if err := re2.Add("p.json", []byte(src)); err != nil {
 		t.Fatal(err)
 	}
@@ -203,11 +203,11 @@ func TestPatternEngineOption(t *testing.T) {
 	for _, c := range []struct {
 		set *Set
 		ok  bool
-	}{{NewSet(), false}, {NewSetWith(Options{GoRegexp: true}), true}} {
+	}{{NewSet(Options{}), false}, {NewSet(Options{GoRegexp: true}), true}} {
 		if err := c.set.Add("g.json", []byte(`{"pattern":"(?i)abc"}`)); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := c.set.Compile("g.json"); (err == nil) != c.ok {
+		if err := c.set.Compile("g.json"); (err == nil) != c.ok {
 			t.Errorf("GoRegexp %v: (?i)abc compiles: %v", c.ok, err)
 		}
 	}

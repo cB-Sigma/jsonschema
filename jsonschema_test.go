@@ -10,7 +10,7 @@ import (
 //
 // Covers: SIG-IPE-2226
 func TestValidator(t *testing.T) {
-	s := NewSet()
+	s := NewSet(Options{})
 	add := func(name, src string) {
 		t.Helper()
 		if err := s.Add(name, []byte(src)); err != nil {
@@ -84,7 +84,7 @@ func TestValidator(t *testing.T) {
 // keyword the validator does not implement, also nested under properties,
 // items and definitions, and the draft-04 boolean exclusiveMinimum.
 func TestOCADialect(t *testing.T) {
-	s := NewDialectSet(OCA())
+	s := NewSet(Options{Dialect: OCA()})
 	if err := s.Add("a.json", []byte(`{"$schema":"http://json-schema.org/draft-06/schema#","id":"urn:x","javaType":"A","definitions":{"X":{"type":"string","comment":"c"}},
 		"properties":{"x":{"$ref":"#/definitions/X"},"y":{"type":"array","items":{"type":"integer","multipleOf":1}}}}`)); err != nil {
 		t.Fatal(err)
@@ -97,7 +97,7 @@ func TestOCADialect(t *testing.T) {
 		`{"definitions":{"X":{"vendorKeyword":1}}}`,
 		`{"properties":{"n":{"type":"number","minimum":0,"exclusiveMinimum":true}}}`,
 	} {
-		b := NewDialectSet(OCA())
+		b := NewSet(Options{Dialect: OCA()})
 		_ = b.Add("b.json", []byte(bad))
 		if _, err := b.CheckSchemas("b.json", ""); err == nil {
 			t.Errorf("%s was accepted", bad)
@@ -119,7 +119,7 @@ func TestOCADialect(t *testing.T) {
 //
 // Covers: SIG-IPE-2226
 func TestDraft07Specials(t *testing.T) {
-	s := NewSet()
+	s := NewSet(Options{})
 	for name, src := range map[string]string{
 		"n.json":      `{"type":"object","properties":{"big":{"type":"integer","maximum":9007199254740992},"i":{"type":"integer"},"h":{"type":"string","format":"UTF8"},"d":{"type":"string","format":"x-vendor"}}}`,
 		"r.json":      `{"$id":"http://x.example/a/r.json","properties":{"t":{"$ref":"target.json"},"s":{"$ref":"target.json","maxLength":1}}}`,

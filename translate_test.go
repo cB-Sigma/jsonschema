@@ -16,7 +16,7 @@ import (
 //
 // Covers: SIG-IPE-2362
 func TestTranslate(t *testing.T) {
-	s := NewSet()
+	s := NewSet(Options{})
 	add := func(name, src string) {
 		t.Helper()
 		if err := s.Add(name, []byte(src)); err != nil {
@@ -56,18 +56,18 @@ func TestTranslate(t *testing.T) {
 
 	// anyOf: one failure, and the closest branch on request
 	cv, _ := Decode([]byte(`{"x":1}`))
-	sch, err := s.Compile("c.json")
+	sch, err := s.compile("c.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	plain := Translate(sch.Validate(cv), cv, nil, nil)
+	plain := Translate(sch.Validate(cv), cv, Style{}, nil)
 	if !reflect.DeepEqual([]Error(plain), []Error{
 		{"", "anyOf", "matches none of the anyOf schemas"},
 		{"", "not", "must not match the not schema"},
 	}) {
 		t.Errorf("anyOf: %v", plain)
 	}
-	st := &Style{ClosestBranch: true, Pattern: "does not match the pattern ",
+	st := Style{ClosestBranch: true, Pattern: "does not match the pattern ",
 		Bound: func(r *big.Rat) string { return r.RatString() }, Multiple: func(r *big.Rat) string { return r.FloatString(1) }}
 	closest := Translate(sch.Validate(cv), cv, st, nil)
 	if !reflect.DeepEqual([]Error(closest), []Error{
@@ -77,7 +77,7 @@ func TestTranslate(t *testing.T) {
 	}) {
 		t.Errorf("closest branch: %v", closest)
 	}
-	osch, _ := s.Compile("o.json")
+	osch, _ := s.compile("o.json")
 	styled := Translate(osch.Validate(v), v, st, nil)
 	if !hasErr(styled, "/n", "must be >= 3/2") || !hasErr(styled, "/n", "multiple of 0.5") {
 		t.Errorf("style: %v", styled)
@@ -86,7 +86,7 @@ func TestTranslate(t *testing.T) {
 	if !hasErr(Translate(osch.Validate(pv), pv, st, nil), "/a", "does not match the pattern ^x") {
 		t.Errorf("pattern style")
 	}
-	if capped := Translate(osch.Validate(v), v, &Style{Max: 2}, nil); len(capped) != 2 {
+	if capped := Translate(osch.Validate(v), v, Style{Max: 2}, nil); len(capped) != 2 {
 		t.Errorf("Max 2: %v", capped)
 	}
 

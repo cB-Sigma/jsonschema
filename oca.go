@@ -23,7 +23,7 @@ func OCA() *Dialect {
 			case "id", "javaType", "comment":
 				return true
 			}
-			return Keywords[k]
+			return keywords[k]
 		},
 	}
 }

@@ -65,10 +65,14 @@ type doc struct {
 	root  any
 }
 
-// Options choose how a Set made by NewSetWith validates. The zero value is
-// what NewSet gives.
+// Options choose how a Set made by NewSet validates. The zero value gives
+// the defaults each field describes.
 type Options struct {
-	// Dialect, when set, is applied by CheckSchemas (see NewDialectSet).
+	// Dialect, when set, is applied by CheckSchemas: keywords outside it
+	// are refused and its keyword checks run. nil makes CheckSchemas
+	// accept the keywords Keywords lists (and Keywords2020 in drafts
+	// 2019-09 and later). The set keeps the pointer; the caller must not
+	// change the dialect afterwards.
 	Dialect *Dialect
 
 	// AssertFormat makes "format" an assertion in every draft. Without
@@ -111,27 +115,30 @@ var drafts = map[string]*v6.Draft{
 	"https://json-schema.org/draft/2020-12/schema": v6.Draft2020,
 }
 
-// NewSet returns an empty set. format is asserted in drafts 4, 6 and 7
-// only (see Options.AssertFormat).
-func NewSet() *Set { return NewSetWith(Options{}) }
-
-// NewSetWith returns an empty set with the options.
-func NewSetWith(o Options) *Set {
+// NewSet returns an empty set with the options; the zero Options assert
+// format in drafts 4, 6 and 7 only (see Options.AssertFormat) and refuse
+// no keyword in CheckSchemas.
+func NewSet(o Options) *Set {
 	return &Set{byName: map[string]*doc{}, byID: map[string]*doc{}, compiled: map[string]*v6.Schema{}, byURL: map[string]any{},
 		dialect: o.Dialect, opts: o}
 }
 
-// NewDialectSet returns an empty set whose CheckSchemas applies the
-// dialect; it is NewSetWith(Options{Dialect: d}).
-func NewDialectSet(d *Dialect) *Set { return NewSetWith(Options{Dialect: d}) }
+// prefixed gives an error returned by an exported function the package
+// prefix, keeping the error itself reachable through errors.Is and As.
+func prefixed(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("jsonschema: %w", err)
+}
 
 // Add parses a schema document and adds it under name (its file name).
 func (s *Set) Add(name string, raw []byte) error {
 	root, err := decode(raw)
 	if err != nil {
-		return fmt.Errorf("schema %s: %w", name, err)
+		return fmt.Errorf("jsonschema: schema %s: %w", name, err)
 	}
-	return s.add(name, root)
+	return prefixed(s.add(name, root))
 }
 
 // AddValue adds a schema document that is already decoded (map[string]any,
@@ -140,7 +147,7 @@ func (s *Set) Add(name string, raw []byte) error {
 func (s *Set) AddValue(name string, root any) error {
 	b, err := json.Marshal(root)
 	if err != nil {
-		return fmt.Errorf("schema %s: %w", name, err)
+		return fmt.Errorf("jsonschema: schema %s: %w", name, err)
 	}
 	return s.Add(name, b)
 }
@@ -213,17 +220,24 @@ func (s *Set) ValidateGo(name string, v any) error {
 // failed check is a ValidationError; a schema that cannot be compiled is
 // another error.
 func (s *Set) Validate(name string, instance any) error {
-	sch, err := s.Compile(name)
+	sch, err := s.compile(name)
 	if err != nil {
-		return err
+		return prefixed(err)
 	}
 	return s.translate(sch.Validate(instance), instance)
 }
 
 // Compile compiles the named document (and what it references) once, so
-// that a schema the library refuses is reported before any validation.
-// The first call freezes the set.
-func (s *Set) Compile(name string) (*v6.Schema, error) {
+// that a schema the validator refuses is reported before any validation;
+// later validations reuse the result. The first call freezes the set: Add
+// fails after it.
+func (s *Set) Compile(name string) error {
+	_, err := s.compile(name)
+	return prefixed(err)
+}
+
+// compile is Compile, returning the library's compiled schema.
+func (s *Set) compile(name string) (*v6.Schema, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if sch, ok := s.compiled[name]; ok {
@@ -371,7 +385,10 @@ func withFormatAssertion(root any) any {
 
 // Decode parses JSON the way Validate expects instances (numbers as
 // json.Number); trailing data is an error.
-func Decode(data []byte) (any, error) { return decode(data) }
+func Decode(data []byte) (any, error) {
+	v, err := decode(data)
+	return v, prefixed(err)
+}
 
 func decode(data []byte) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -390,11 +407,28 @@ func decode(data []byte) (any, error) {
 	return v, nil
 }
 
-// Keywords are the draft-07 keywords (and $schema, $id, $comment, title,
-// description, default, examples, definitions, readOnly, writeOnly and
-// contentMediaType/contentEncoding, which carry no check) that a dialect
-// accepts by default in CheckSchemas.
-var Keywords = map[string]bool{
+// Keywords returns, sorted, the draft-07 keywords (and $schema, $id,
+// $comment, title, description, default, examples, definitions, readOnly,
+// writeOnly and contentMediaType/contentEncoding, which carry no check)
+// that CheckSchemas accepts by default. The slice is the caller's.
+func Keywords() []string { return sortedNames(keywords) }
+
+// Keywords2020 returns, sorted, the keywords of drafts 2019-09 and 2020-12
+// that are not in Keywords. Without a dialect's Allowed, CheckSchemas
+// accepts them in documents of those drafts. The slice is the caller's.
+func Keywords2020() []string { return sortedNames(keywords2020) }
+
+func sortedNames(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// keywords is the table behind Keywords.
+var keywords = map[string]bool{
 	"type": true, "enum": true, "const": true, "properties": true, "required": true, "additionalProperties": true,
 	"patternProperties": true, "propertyNames": true, "minProperties": true, "maxProperties": true, "dependencies": true,
 	"items": true, "additionalItems": true, "contains": true, "minItems": true, "maxItems": true, "uniqueItems": true,

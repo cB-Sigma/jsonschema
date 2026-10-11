@@ -23,9 +23,12 @@ type Error struct {
 	// Keyword is the schema keyword that failed ("false" for a false
 	// schema, "json" for a document that is not JSON).
 	Keyword string
+	// Message is our wording of the failure, without the path. It may
+	// change in any release; branch on Keyword and Path instead.
 	Message string
 }
 
+// String formats the failure as "path: message", with "/" for the root.
 func (e Error) String() string {
 	p := e.Path
 	if p == "" {
@@ -34,9 +37,13 @@ func (e Error) String() string {
 	return p + ": " + e.Message
 }
 
-// ValidationError lists every failed check of one validation.
+// ValidationError lists every failed check of one validation. Callers
+// reach it with errors.As (a value, not a pointer).
 type ValidationError []Error
 
+// Error joins the failures with "; ". Unlike the package's other errors it
+// carries no "jsonschema:" prefix, so that it can be shown to the sender
+// of the document as it is.
 func (v ValidationError) Error() string {
 	parts := make([]string, len(v))
 	for i, e := range v {
@@ -107,7 +114,7 @@ func (s *Set) translate(err error, instance any) error {
 	if err == nil {
 		return nil
 	}
-	ve := Translate(err, instance, &Style{}, s.schemaAt)
+	ve := Translate(err, instance, Style{}, s.schemaAt)
 	if len(ve) == 0 {
 		return err
 	}
@@ -146,14 +153,16 @@ func (s *Set) schemaAt(loc string) map[string]any {
 // not nil, finds a schema object by the location the library reports, to
 // name multiple types in the schema's order. Any other error is returned
 // as nil.
-func Translate(err error, instance any, st *Style, schemaAt func(loc string) map[string]any) ValidationError {
+//
+// Translate reads the error values of major version 6 of that library: it
+// is for callers that compile schemas with v6 themselves, and stays tied
+// to v6 for the whole of this module's v1.
+func Translate(err error, instance any, style Style, schemaAt func(loc string) map[string]any) ValidationError {
 	var verr *v6.ValidationError
 	if !errors.As(err, &verr) {
 		return nil
 	}
-	if st == nil {
-		st = &Style{}
-	}
+	st := &style
 	t := &translator{st: st, inst: instance, schemaAt: schemaAt}
 	t.walk(verr, nil)
 	out := t.sorted()

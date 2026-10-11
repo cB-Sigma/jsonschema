@@ -74,11 +74,11 @@ func decode(b []byte) any {
 }
 
 func sigmaSchema(b testing.TB) *sigma.Set {
-	s := sigma.NewSet()
+	s := sigma.NewSet(sigma.Options{})
 	if err := s.Add("meter-values.json", []byte(schema)); err != nil {
 		b.Fatal(err)
 	}
-	if _, err := s.Compile("meter-values.json"); err != nil {
+	if err := s.Compile("meter-values.json"); err != nil {
 		b.Fatal(err)
 	}
 	return s

@@ -13,7 +13,8 @@ import (
 // keywords allowed, and checks of a keyword's value. Validation itself is
 // the library's (see jsonschema.go); a dialect only refuses, before use,
 // schemas the validator would not check as their authors meant. Every
-// field is optional.
+// field is optional. A Dialect must not be changed once a Set uses it;
+// the Check functions may then run on several goroutines at once.
 type Dialect struct {
 	// Keywords adds keywords to those CheckSchemas accepts, with a check
 	// of their value.
@@ -110,7 +111,7 @@ func (c *CheckContext) FailAt(pointer, format string, a ...any) {
 func (s *Set) CheckSchemas(name string, pointers ...string) ([]string, error) {
 	d := s.byName[name]
 	if d == nil {
-		return nil, fmt.Errorf("no schema %s in the set", name)
+		return nil, fmt.Errorf("jsonschema: no schema %s in the set", name)
 	}
 	w := &walker{s: s, seen: map[string]*wnode{}, ix: s.refs()}
 	for _, p := range pointers {
@@ -165,13 +166,11 @@ func (w *walker) allowed(d *doc, k string) bool {
 			return dl.Allowed(k)
 		}
 	}
-	return Keywords[k] || w.s.modern(d) && Keywords2020[k]
+	return keywords[k] || w.s.modern(d) && keywords2020[k]
 }
 
-// Keywords2020 are the keywords of drafts 2019-09 and 2020-12 that are
-// not in Keywords. Without a dialect's Allowed, CheckSchemas accepts them
-// in documents of those drafts.
-var Keywords2020 = map[string]bool{
+// keywords2020 is the table behind Keywords2020.
+var keywords2020 = map[string]bool{
 	"$defs": true, "$anchor": true, "$dynamicRef": true, "$dynamicAnchor": true, "$recursiveRef": true,
 	"$recursiveAnchor": true, "$vocabulary": true, "dependentRequired": true, "dependentSchemas": true,
 	"prefixItems": true, "unevaluatedProperties": true, "unevaluatedItems": true, "minContains": true,

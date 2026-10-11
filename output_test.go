@@ -11,7 +11,7 @@ import (
 
 func outputOf(t *testing.T, schema, data string, f OutputFormat, files ...string) OutputUnit {
 	t.Helper()
-	s := NewSet()
+	s := NewSet(Options{})
 	if err := s.Add("s.json", []byte(schema)); err != nil {
 		t.Fatal(err)
 	}

@@ -57,7 +57,7 @@ func TestDialectCheckSchemas(t *testing.T) {
 		Allowed:           func(k string) bool { return k == "type" || k == "properties" || k == "allOf" || k == "items" },
 		ObjectSchemasOnly: true,
 	}
-	s := NewDialectSet(d)
+	s := NewSet(Options{Dialect: d})
 	if err := s.Add("doc.json", []byte(`{
 		"good": {"type": "object", "properties": {"a": {"type": "string", "minLength": 1}, "b": {"$ref": "#/good/properties/a"}}},
 		"bad": {"type": "string", "minLength": -1, "pattern": "x", "x-ref": 1},
@@ -92,7 +92,7 @@ func TestDialectCheckSchemas(t *testing.T) {
 
 	// without a dialect, CheckSchemas uses the draft-07 keyword list and
 	// accepts boolean schemas
-	plain := NewSet()
+	plain := NewSet(Options{})
 	if err := plain.Add("p.json", []byte(`{"definitions":{"a":{"items":true,"if":{"const":1},"then":{"minimum":1}},"b":{"nullable":true}}}`)); err != nil {
 		t.Fatal(err)
 	}

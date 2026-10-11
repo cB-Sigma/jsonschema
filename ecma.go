@@ -44,7 +44,7 @@ func CompileRegexp(src string) (*Regexp, error) {
 	p := &rparser{src: []rune(src), names: map[string]int{}}
 	root, err := p.parse()
 	if err != nil {
-		return nil, fmt.Errorf("pattern %q: %w", src, err)
+		return nil, fmt.Errorf("jsonschema: pattern %q: %w", src, err)
 	}
 	r := &Regexp{src: src, ncap: p.ncap, root: root}
 	if !p.backtrack {
@@ -837,10 +837,9 @@ func tablesRanges(ts ...*unicode.RangeTable) []rrange {
 func minus(a, b []rrange) []rrange {
 	c := &rclass{rs: mergeRanges(append([]rrange(nil), b...))}
 	var keep []rrange
+	rest := complement(c.rs)
 	for _, r := range a {
-		for _, x := range intersect(r, complement(c.rs)) {
-			keep = append(keep, x)
-		}
+		keep = append(keep, intersect(r, rest)...)
 	}
 	return mergeRanges(keep)
 }

@@ -9,7 +9,7 @@ import "testing"
 // URL, before a document that only shares its file name; the file-name
 // fallback still applies to relative names.
 func TestLoaderFullURLName(t *testing.T) {
-	s := NewSet()
+	s := NewSet(Options{})
 	add := func(name, src string) {
 		t.Helper()
 		if err := s.Add(name, []byte(src)); err != nil {

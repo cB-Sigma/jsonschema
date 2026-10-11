@@ -5,7 +5,7 @@ go 1.27.0
 replace github.com/cB-Sigma/jsonschema => ../
 
 require (
-	github.com/cB-Sigma/jsonschema v0.0.0
+	github.com/cB-Sigma/jsonschema v1.0.0
 	github.com/kaptinlin/jsonschema v0.9.10
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 )

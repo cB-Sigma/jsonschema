@@ -1,5 +1,41 @@
 # Changelog
 
+## v1.0.0 (2026-10-12)
+
+From v1.0.0 the exported API does not change in a way that breaks a
+caller; additions come in minor releases.
+
+### Breaking
+
+- One constructor: `NewSet(Options)`. `NewSetWith` and `NewDialectSet`
+  are removed. Migration: `NewSet()` becomes `NewSet(jsonschema.Options{})`,
+  `NewSetWith(o)` becomes `NewSet(o)`, `NewDialectSet(d)` becomes
+  `NewSet(jsonschema.Options{Dialect: d})`.
+- `Set.Compile(name) error`: it no longer returns the third-party
+  `*jsonschema/v6.Schema`, so this module's v1 does not depend on that
+  type. Migration: `_, err := set.Compile(name)` becomes
+  `err := set.Compile(name)`; validate through `Set.Validate`,
+  `ValidateJSON` or `ValidateGo`, which reuse the compiled schema.
+- `Keywords` and `Keywords2020` are functions returning a sorted copy
+  (`[]string`) instead of package maps a caller could change. Migration:
+  `jsonschema.Keywords[k]` becomes `slices.Contains(jsonschema.Keywords(), k)`.
+- `Translate` takes `Style` by value. Migration: pass `Style{...}` (or
+  `*st`) instead of `&Style{...}`; `nil` becomes `Style{}`.
+
+### Changed
+
+- Errors other than `ValidationError` start with `jsonschema: ` (from
+  `Add`, `AddValue`, `Compile`, `Validate` when the schema does not
+  compile, `CheckSchemas` for an unknown document, `Output`, `Decode` and
+  `CompileRegexp`). `ValidationError`'s text is unchanged. Error text is
+  not API; branch with `errors.As`.
+
+### Documented
+
+- `Translate` is tied to santhosh-tekuri/jsonschema v6 error values on
+  purpose, for callers that compile with v6 themselves.
+- `Options.Dialect`: what nil means, and that the set keeps the pointer.
+
 ## v0.3.0 (2026-10-11)
 
 Every required and optional test of the JSON Schema Test Suite passes in

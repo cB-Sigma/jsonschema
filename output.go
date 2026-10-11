@@ -93,15 +93,15 @@ func (u OutputUnit) MarshalJSON() ([]byte, error) {
 // subschema reached through $dynamicRef or $recursiveRef is shown at its
 // static target; whether it passed comes from the evaluation in context.
 func (s *Set) Output(name string, instance any, f OutputFormat) (OutputUnit, error) {
-	sch, err := s.Compile(name)
+	sch, err := s.compile(name)
 	if err != nil {
-		return OutputUnit{}, err
+		return OutputUnit{}, prefixed(err)
 	}
 	verr := sch.Validate(instance)
 	if verr != nil {
 		var ve *v6.ValidationError
 		if !errors.As(verr, &ve) {
-			return OutputUnit{}, verr
+			return OutputUnit{}, prefixed(verr)
 		}
 	}
 	valid := verr == nil
@@ -109,7 +109,7 @@ func (s *Set) Output(name string, instance any, f OutputFormat) (OutputUnit, err
 		return OutputUnit{Valid: valid, flag: true}, nil
 	}
 	if f != OutputBasic && f != OutputDetailed && f != OutputVerbose {
-		return OutputUnit{}, fmt.Errorf("unknown output format %d", f)
+		return OutputUnit{}, fmt.Errorf("jsonschema: unknown output format %d", f)
 	}
 	w := &outWalker{s: s}
 	var root OutputUnit

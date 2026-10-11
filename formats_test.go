@@ -184,7 +184,7 @@ func TestFormatCheckers(t *testing.T) {
 
 // Through a set: the message names the value and what it is not.
 func TestFormatMessage(t *testing.T) {
-	s := NewSetWith(Options{AssertFormat: true})
+	s := NewSet(Options{AssertFormat: true})
 	if err := s.Add("h.json", []byte(`{"$schema":"https://json-schema.org/draft/2020-12/schema","format":"hostname"}`)); err != nil {
 		t.Fatal(err)
 	}

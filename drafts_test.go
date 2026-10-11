@@ -10,7 +10,7 @@ import (
 
 func setOf(t *testing.T, o Options, docs ...string) *Set {
 	t.Helper()
-	s := NewSetWith(o)
+	s := NewSet(o)
 	for i := 0; i+1 < len(docs); i += 2 {
 		if err := s.Add(docs[i], []byte(docs[i+1])); err != nil {
 			t.Fatal(err)
@@ -34,7 +34,7 @@ func TestDefaultDraft(t *testing.T) {
 		t.Fatal("2020-12 default: prefixItems not applied")
 	}
 	s = setOf(t, Options{DefaultDraft: "http://example.com/draft-99"}, "a.json", sch)
-	if _, err := s.Compile("a.json"); err == nil || !strings.Contains(err.Error(), "default draft") {
+	if err := s.Compile("a.json"); err == nil || !strings.Contains(err.Error(), "default draft") {
 		t.Fatalf("unknown default draft: %v", err)
 	}
 }
@@ -159,7 +159,7 @@ func TestVocabularies(t *testing.T) {
 	s := setOf(t, Options{},
 		"https://x.example/m1", meta("https://x.example/m1", `"https://x.example/vocab/unknown":true`),
 		"a.json", `{"$schema":"https://x.example/m1","minimum":1}`)
-	if _, err := s.Compile("a.json"); err == nil {
+	if err := s.Compile("a.json"); err == nil {
 		t.Fatal("required unknown vocabulary accepted")
 	}
 

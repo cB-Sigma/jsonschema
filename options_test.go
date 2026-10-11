@@ -26,7 +26,7 @@ func TestFormatAnnotationByDraft(t *testing.T) {
 	asserts := map[string]bool{"draft4": true, "draft6": true, "draft7": true, "none": true}
 	for draft, meta := range metas {
 		for _, assert := range []bool{false, true} {
-			s := NewSetWith(Options{AssertFormat: assert})
+			s := NewSet(Options{AssertFormat: assert})
 			src := `{"type":"string","format":"date"}`
 			if meta != "" {
 				src = `{"$schema":"` + meta + `","type":"string","format":"date"}`
@@ -48,7 +48,7 @@ func TestFormatAnnotationByDraft(t *testing.T) {
 	// or optional (false): this package knows the vocabulary, so both
 	// assert.
 	for _, required := range []string{"true", "false"} {
-		s := NewSet()
+		s := NewSet(Options{})
 		for name, src := range map[string]string{
 			"http://x.example/meta": `{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"http://x.example/meta",
 			"$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/format-assertion":` + required + `},
@@ -67,9 +67,9 @@ func TestFormatAnnotationByDraft(t *testing.T) {
 		}
 	}
 
-	// NewDialectSet and NewSet keep their behaviour: format asserted in a
-	// draft-07 document.
-	d := NewDialectSet(OCA())
+	// A dialect alone does not change format: asserted in a draft-06
+	// document.
+	d := NewSet(Options{Dialect: OCA()})
 	if err := d.Add("o.json", []byte(`{"$schema":"http://json-schema.org/draft-06/schema#","type":"string","format":"date-time"}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -78,9 +78,9 @@ func TestFormatAnnotationByDraft(t *testing.T) {
 	}
 }
 
-// Options.Dialect is what NewDialectSet sets.
+// Options.Dialect is applied by CheckSchemas.
 func TestOptionsDialect(t *testing.T) {
-	s := NewSetWith(Options{Dialect: OCA(), AssertFormat: true})
+	s := NewSet(Options{Dialect: OCA(), AssertFormat: true})
 	if err := s.Add("b.json", []byte(`{"definitions":{"X":{"vendorKeyword":1}}}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestAssertContent(t *testing.T) {
 		{d2020, true, `"eyJhIjoxfQ=="`, ""},
 		{d2020, false, `"eyJiIjoxfQ=="`, ""},
 	} {
-		s := NewSetWith(Options{AssertContent: c.assert})
+		s := NewSet(Options{AssertContent: c.assert})
 		if err := s.Add("c.json", []byte(c.src)); err != nil {
 			t.Fatal(err)
 		}

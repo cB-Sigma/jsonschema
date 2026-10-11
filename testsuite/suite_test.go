@@ -264,7 +264,7 @@ func TestOutputSuite(t *testing.T) {
 }
 
 func runOutputTest(meta string, outSchema, schema, data []byte, want map[string]json.RawMessage) string {
-	set := jsonschema.NewSet()
+	set := jsonschema.NewSet(jsonschema.Options{})
 	if err := set.Add(schemaName, schema); err != nil {
 		return err.Error()
 	}
@@ -272,7 +272,7 @@ func runOutputTest(meta string, outSchema, schema, data []byte, want map[string]
 	if err != nil {
 		return err.Error()
 	}
-	check := jsonschema.NewSet()
+	check := jsonschema.NewSet(jsonschema.Options{})
 	if err := check.Add("output-schema.json", outSchema); err != nil {
 		return err.Error()
 	}
@@ -335,7 +335,7 @@ func runGroup(opts jsonschema.Options, meta string, remotes []remote, g group) (
 			}
 		}
 	}()
-	set := jsonschema.NewSetWith(opts)
+	set := jsonschema.NewSet(opts)
 	for _, r := range remotes {
 		if err := set.Add(r.url, r.raw); err != nil {
 			return fill(out, "remote: "+err.Error())
@@ -348,7 +348,7 @@ func runGroup(opts jsonschema.Options, meta string, remotes []remote, g group) (
 	if err := set.Add(schemaName, sch); err != nil {
 		return fill(out, "schema: "+err.Error())
 	}
-	if _, err := set.Compile(schemaName); err != nil {
+	if err := set.Compile(schemaName); err != nil {
 		return fill(out, "compile: "+err.Error())
 	}
 	for i, tc := range g.Tests {
